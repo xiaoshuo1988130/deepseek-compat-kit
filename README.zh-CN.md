@@ -6,17 +6,19 @@
 
 面向 DeepSeek V4 工具调用 Agent 的兼容性与诊断工具。
 
-DeepSeek 旧模型 `deepseek-chat` 和 `deepseek-reasoner` 计划在 **2026-07-24** 停用。如果你的 OpenAI-compatible Agent 在迁移 V4 时出现多轮工具调用错误，DeepSeek CompatKit 可以帮助定位问题，并提供临时兼容缓解方案。
+用一个本地 OpenAI-compatible proxy 修复和诊断 DeepSeek V4 tool-calling 迁移问题。启动 proxy，把客户端 `baseURL` 指过去，先尽量不改现有 Agent loop。
 
-优先定位这个常见错误：
+优先解决这个常见错误：
 
 ```text
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-## 当前 Alpha 命令
+DeepSeek 旧模型 `deepseek-chat` 和 `deepseek-reasoner` 计划在 **2026-07-24** 停用。如果你的 OpenAI-compatible Agent 在迁移 V4 时出现多轮工具调用错误，DeepSeek CompatKit 可以帮助定位问题，并提供临时兼容缓解方案。
 
-运行一个不需要 API key 的本地 smoke demo：
+## Quickstart
+
+1. 先运行一个不需要 DeepSeek API key 的本地验证：
 
 ```bash
 git clone https://github.com/xiaoshuo1988130/deepseek-compat-kit.git
@@ -24,17 +26,26 @@ cd deepseek-compat-kit
 npm run demo:mock
 ```
 
-启动本地兼容 proxy：
+2. 启动本地兼容 proxy：
 
 ```bash
 DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787
 ```
 
-把现有 OpenAI-compatible client 的 `baseURL` 指向：
+3. 把现有 OpenAI-compatible client 的 `baseURL` 指向：
 
 ```text
 http://127.0.0.1:8787/v1
 ```
+
+```js
+const client = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: "http://127.0.0.1:8787/v1",
+});
+```
+
+## 命令
 
 proxy 默认转发到 `https://api.deepseek.com`。如果要测试或接自托管网关：
 
@@ -60,6 +71,12 @@ npx deepseek-compat-kit lint-schema ./tools.schema.json --strict --base-url http
 npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
 ```
 
+再次运行无 key 验证：
+
+```bash
+npm run demo:mock
+```
+
 ## 第一阶段解决什么
 
 - DeepSeek V4 多轮 tool calling 中的 `reasoning_content` 回传问题。
@@ -72,6 +89,8 @@ npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.j
 本地 proxy 是 **stateful best-effort** 缓解方案，不是 stateless magic fix。
 
 只有当相关请求和响应从对话开始就经过 proxy，proxy 才可能保存并回放 `reasoning_content`。如果框架传给 proxy 的 `messages` 已经丢失了 `reasoning_content`，DeepSeek CompatKit 只能诊断缺失，不能凭空还原。
+
+简单说：要从第一轮对话开始就让流量经过 proxy。
 
 初始 proxy 范围：
 

@@ -6,17 +6,19 @@
 
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
-DeepSeek legacy models `deepseek-chat` and `deepseek-reasoner` are scheduled for deprecation on **2026-07-24**. If your OpenAI-compatible agent loop breaks during the V4 migration, DeepSeek CompatKit helps diagnose and temporarily mitigate common tool-calling failures.
+Fix DeepSeek V4 tool-calling migrations with a local OpenAI-compatible proxy. Start the proxy, change your client `baseURL`, and keep the rest of your agent loop unchanged while you diagnose the failure.
 
-Fix and diagnose:
+Built first for this error:
 
 ```text
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-## Current Alpha Commands
+DeepSeek legacy models `deepseek-chat` and `deepseek-reasoner` are scheduled for deprecation on **2026-07-24**. If your OpenAI-compatible agent loop breaks during the V4 migration, DeepSeek CompatKit helps diagnose and temporarily mitigate common tool-calling failures.
 
-Run a no-key local smoke demo:
+## Quickstart
+
+1. Verify the proxy behavior without a DeepSeek API key:
 
 ```bash
 git clone https://github.com/xiaoshuo1988130/deepseek-compat-kit.git
@@ -24,17 +26,26 @@ cd deepseek-compat-kit
 npm run demo:mock
 ```
 
-Run a local compatibility proxy:
+2. Start the local proxy:
 
 ```bash
 DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787
 ```
 
-Point your OpenAI-compatible client at:
+3. Point your OpenAI-compatible client at:
 
 ```text
 http://127.0.0.1:8787/v1
 ```
+
+```js
+const client = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: "http://127.0.0.1:8787/v1",
+});
+```
+
+## Commands
 
 The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
 
@@ -60,6 +71,12 @@ Create a sanitized replay fixture:
 npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
 ```
 
+Run the no-key proof again:
+
+```bash
+npm run demo:mock
+```
+
 ## What It Solves First
 
 - DeepSeek V4 `reasoning_content` round-trip failures in multi-turn tool calling.
@@ -72,6 +89,8 @@ npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.j
 The local proxy is a **stateful best-effort** mitigation, not a stateless magic fix.
 
 It can only help replay `reasoning_content` when the relevant requests and responses passed through the proxy from the beginning of the conversation. If a framework sends an already-broken `messages` array where `reasoning_content` was lost before DeepSeek CompatKit saw it, the proxy can diagnose the missing field but cannot reconstruct it from nothing.
+
+In short: route the whole conversation through the proxy from turn one.
 
 Initial proxy scope:
 
