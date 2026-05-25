@@ -1,5 +1,7 @@
 # DeepSeek CompatKit
 
+[中文](README.zh-CN.md)
+
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 DeepSeek legacy models `deepseek-chat` and `deepseek-reasoner` are scheduled for deprecation on **2026-07-24**. If your OpenAI-compatible agent loop breaks during the V4 migration, DeepSeek CompatKit helps diagnose and temporarily mitigate common tool-calling failures.
@@ -68,6 +70,7 @@ Initial proxy scope:
 ## Docs
 
 - [Reasoning content 400 error](docs/errors/reasoning-content-400.md)
+- [Reasoning content 400 error 中文说明](docs/errors/reasoning-content-400.zh-CN.md)
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
