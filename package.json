@@ -12,7 +12,7 @@
     "url": "https://github.com/xiaoshuo1988130/deepseek-compat-kit/issues"
   },
   "bin": {
-    "deepseek-compat-kit": "./bin/deepseek-compat-kit.js"
+    "deepseek-compat-kit": "bin/deepseek-compat-kit.js"
   },
   "files": [
     "bin/",
