@@ -74,11 +74,18 @@ Initial proxy scope:
 
 ## Docs
 
+- [Getting started](docs/getting-started.md)
 - [Reasoning content 400 error](docs/errors/reasoning-content-400.md)
 - [Reasoning content 400 error 中文说明](docs/errors/reasoning-content-400.zh-CN.md)
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
+- [v0.1.0 release notes](docs/releases/v0.1.0.md)
+
+## Examples
+
+- [OpenAI JS SDK baseURL proxy](examples/openai-js)
+- [curl proxy smoke test](examples/curl)
 
 ## Status
 
