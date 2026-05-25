@@ -12,7 +12,25 @@ DeepSeek 旧模型 `deepseek-chat` 和 `deepseek-reasoner` 计划在 **2026-07-2
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-## 当前 Pre-Alpha 命令
+## 当前 Alpha 命令
+
+启动本地兼容 proxy：
+
+```bash
+DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787
+```
+
+把现有 OpenAI-compatible client 的 `baseURL` 指向：
+
+```text
+http://127.0.0.1:8787/v1
+```
+
+proxy 默认转发到 `https://api.deepseek.com`。如果要测试或接自托管网关：
+
+```bash
+npx deepseek-compat-kit proxy --port 8787 --upstream http://127.0.0.1:9000
+```
 
 诊断一次保存的运行日志：
 
@@ -32,20 +50,6 @@ npx deepseek-compat-kit lint-schema ./tools.schema.json --strict --base-url http
 npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
 ```
 
-## 即将提供的 Proxy Alpha
-
-启动本地兼容 proxy：
-
-```bash
-npx deepseek-compat-kit proxy --port 8787
-```
-
-把现有 OpenAI-compatible client 的 `baseURL` 指向：
-
-```text
-http://127.0.0.1:8787/v1
-```
-
 ## 第一阶段解决什么
 
 - DeepSeek V4 多轮 tool calling 中的 `reasoning_content` 回传问题。
@@ -63,8 +67,9 @@ http://127.0.0.1:8787/v1
 
 - 单进程内存态。
 - 官方 DeepSeek OpenAI-compatible `/chat/completions`。
-- non-streaming 和基础 streaming。
-- 请求时 schema warning。
+- non-streaming `reasoning_content` 捕获与补回。
+- 基础 streaming 透传，并尽力捕获供后续轮次使用。
+- 请求时 schema warning，同时输出到终端与响应头。
 - 默认脱敏本地诊断日志。
 
 ## 文档
@@ -77,7 +82,7 @@ http://127.0.0.1:8787/v1
 
 ## 状态
 
-项目处于早期 public-alpha 准备阶段。第一目标是先打穿一个窄而可靠的切口：赢下 `reasoning_content` 400 诊断和 strict schema 检查，再扩展到 SDK shim、框架示例、Docker、成本与 cache 可观测性。
+项目处于早期 public alpha 阶段。第一目标是先打穿一个窄而可靠的切口：赢下 `reasoning_content` 400 诊断、strict schema 检查和最小 local proxy，再扩展到 SDK shim、框架示例、Docker、成本与 cache 可观测性。
 
 ## License
 

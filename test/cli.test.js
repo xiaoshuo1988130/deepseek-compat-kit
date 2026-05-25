@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -52,3 +53,138 @@ test("sanitize redacts reasoning_content and tool results", () => {
   assert.doesNotMatch(safe, /private tool result/);
   assert.doesNotMatch(safe, /xiaoshuo1988130@gmail.com/);
 });
+
+test("proxy injects cached reasoning_content before forwarding follow-up tool calls", async (t) => {
+  const upstreamRequests = [];
+  const upstream = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      upstreamRequests.push(body);
+      response.writeHead(200, { "content-type": "application/json" });
+      if (upstreamRequests.length === 1) {
+        response.end(JSON.stringify({
+          choices: [{
+            message: {
+              role: "assistant",
+              reasoning_content: "cached private reasoning",
+              tool_calls: [{
+                id: "call_abc",
+                type: "function",
+                function: { name: "lookup", arguments: "{}" },
+              }],
+            },
+          }],
+        }));
+        return;
+      }
+
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(upstream);
+  const proxyPort = await freePort();
+  const proxy = spawn(process.execPath, [bin, "proxy", "--port", String(proxyPort), "--upstream", upstreamUrl], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  t.after(() => {
+    proxy.kill();
+    upstream.close();
+  });
+
+  await waitForOutput(proxy.stderr, /proxy alpha listening/);
+
+  const proxyUrl = `http://127.0.0.1:${proxyPort}/v1/chat/completions`;
+  const first = await fetch(proxyUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer test" },
+    body: JSON.stringify({ model: "deepseek-reasoner", messages: [{ role: "user", content: "first" }] }),
+  });
+  assert.equal(first.status, 200);
+  await first.json();
+
+  const second = await fetch(proxyUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer test" },
+    body: JSON.stringify({
+      model: "deepseek-reasoner",
+      messages: [{
+        role: "assistant",
+        tool_calls: [{
+          id: "call_abc",
+          type: "function",
+          function: { name: "lookup", arguments: "{}" },
+        }],
+      }],
+    }),
+  });
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get("x-deepseek-compat-reasoning-injected"), "1");
+  await second.json();
+
+  assert.equal(upstreamRequests.length, 2);
+  assert.equal(upstreamRequests[1].messages[0].reasoning_content, "cached private reasoning");
+});
+
+function collectRequestJson(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      try {
+        resolve(JSON.parse(body || "{}"));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+function listen(server) {
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+async function freePort() {
+  const server = http.createServer();
+  const url = await listen(server);
+  const port = Number(new URL(url).port);
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+function waitForOutput(stream, pattern) {
+  return new Promise((resolve, reject) => {
+    let output = "";
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error(`timed out waiting for ${pattern}; output was: ${output}`));
+    }, 5000);
+
+    function onData(chunk) {
+      output += chunk.toString();
+      if (pattern.test(output)) {
+        cleanup();
+        resolve();
+      }
+    }
+
+    function cleanup() {
+      clearTimeout(timeout);
+      stream.off("data", onData);
+    }
+
+    stream.on("data", onData);
+  });
+}

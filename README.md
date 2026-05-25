@@ -12,7 +12,25 @@ Fix and diagnose:
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-## Current Pre-Alpha Commands
+## Current Alpha Commands
+
+Run a local compatibility proxy:
+
+```bash
+DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787
+```
+
+Point your OpenAI-compatible client at:
+
+```text
+http://127.0.0.1:8787/v1
+```
+
+The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
+
+```bash
+npx deepseek-compat-kit proxy --port 8787 --upstream http://127.0.0.1:9000
+```
 
 Diagnose a saved run:
 
@@ -32,20 +50,6 @@ Create a sanitized replay fixture:
 npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
 ```
 
-## Upcoming Proxy Alpha
-
-Run a local compatibility proxy:
-
-```bash
-npx deepseek-compat-kit proxy --port 8787
-```
-
-Point your OpenAI-compatible client at:
-
-```text
-http://127.0.0.1:8787/v1
-```
-
 ## What It Solves First
 
 - DeepSeek V4 `reasoning_content` round-trip failures in multi-turn tool calling.
@@ -63,8 +67,9 @@ Initial proxy scope:
 
 - Single-process in-memory state.
 - Official DeepSeek OpenAI-compatible `/chat/completions`.
-- Non-streaming and basic streaming.
-- Request-time schema warnings.
+- Non-streaming `reasoning_content` capture and injection.
+- Basic streaming pass-through with best-effort capture for later turns.
+- Request-time schema warnings in terminal output and response headers.
 - Sanitized local diagnostics.
 
 ## Docs
@@ -77,7 +82,7 @@ Initial proxy scope:
 
 ## Status
 
-This repository is in early public-alpha preparation. The first target is a narrow, reliable cut: win `reasoning_content` 400 diagnostics and strict schema checks before expanding into SDK shims, framework examples, Docker, and cost/cache observability.
+This repository is in early public alpha. The first target is a narrow, reliable cut: win `reasoning_content` 400 diagnostics, strict schema checks, and a minimal local proxy before expanding into SDK shims, framework examples, Docker, and cost/cache observability.
 
 ## License
 

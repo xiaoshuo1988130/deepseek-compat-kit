@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 
 const ERROR_TEXT = "The reasoning_content in the thinking mode must be passed back to the API";
@@ -15,7 +16,7 @@ Commands:
   diagnose <run.jsonl>
   replay <fixture.jsonl>
   sanitize <run.jsonl> --out <safe.jsonl>
-  proxy --port 8787
+  proxy [--port 8787] [--upstream https://api.deepseek.com]
 
 Common error:
   ${ERROR_TEXT}
@@ -38,7 +39,7 @@ function main() {
   if (command === "diagnose") return diagnose(args);
   if (command === "replay") return diagnose(args);
   if (command === "sanitize") return sanitize(args);
-  if (command === "proxy") return proxyNotice(args);
+  if (command === "proxy") return startProxy(args);
 
   console.error(`Unknown command "${command}".`);
   console.error("Run `deepseek-compat-kit --help` for usage.");
@@ -288,12 +289,292 @@ function sha256(text) {
   return crypto.createHash("sha256").update(text || "").digest("hex").slice(0, 12);
 }
 
-function proxyNotice(args) {
+function startProxy(args) {
   const port = argValue(args, "--port") || "8787";
-  console.error(`[deepseek-compat-kit] proxy alpha is not implemented in this pre-alpha build.`);
-  console.error(`[deepseek-compat-kit] planned local endpoint: http://127.0.0.1:${port}/v1`);
-  console.error("[deepseek-compat-kit] boundary: reasoning_content repair is stateful best-effort, not stateless magic.");
-  return 2;
+  const upstream = normalizeBaseUrl(argValue(args, "--upstream") || process.env.DEEPSEEK_COMPAT_UPSTREAM || "https://api.deepseek.com");
+  const state = createProxyState();
+  const server = http.createServer((request, response) => {
+    handleProxyRequest({ request, response, upstream, state }).catch((error) => {
+      console.error(`[deepseek-compat-kit] proxy error: ${error.message}`);
+      if (!response.headersSent) {
+        response.writeHead(502, { "content-type": "application/json" });
+      }
+      response.end(JSON.stringify({ error: { message: "DeepSeek CompatKit proxy failed", detail: error.message } }));
+    });
+  });
+
+  server.listen(Number(port), "127.0.0.1", () => {
+    console.error(`[deepseek-compat-kit] proxy alpha listening on http://127.0.0.1:${port}/v1`);
+    console.error(`[deepseek-compat-kit] upstream: ${upstream}`);
+    console.error("[deepseek-compat-kit] boundary: reasoning_content repair is stateful best-effort, not stateless magic.");
+  });
+
+  return undefined;
+}
+
+function createProxyState() {
+  return {
+    reasoningByToolCallId: new Map(),
+    maxEntries: 2000,
+  };
+}
+
+async function handleProxyRequest({ request, response, upstream, state }) {
+  if (request.method === "GET" && request.url === "/health") {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: true, name: "deepseek-compat-kit" }));
+    return;
+  }
+
+  const requestUrl = new URL(request.url, "http://127.0.0.1");
+  const pathname = requestUrl.pathname;
+  if (request.method !== "POST" || !["/v1/chat/completions", "/chat/completions"].includes(pathname)) {
+    response.writeHead(404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { message: "DeepSeek CompatKit proxy only supports POST /v1/chat/completions in alpha." } }));
+    return;
+  }
+
+  const bodyText = await readRequestBody(request);
+  const body = parseProxyJson(bodyText);
+  const repair = repairReasoningContent(body, state);
+  const schemaFindings = lintRequestSchemas(body, upstream);
+
+  for (const finding of [...repair.findings, ...schemaFindings]) {
+    console.error(`${finding.level} ${finding.code} ${finding.path}: ${finding.message}`);
+  }
+
+  const upstreamPath = pathname === "/v1/chat/completions" ? "/chat/completions" : pathname;
+  const upstreamUrl = `${upstream}${upstreamPath}${requestUrl.search}`;
+  const upstreamResponse = await fetch(upstreamUrl, {
+    method: "POST",
+    headers: buildUpstreamHeaders(request.headers, body),
+    body: JSON.stringify(body),
+  });
+
+  response.writeHead(upstreamResponse.status, buildResponseHeaders(upstreamResponse.headers, repair, schemaFindings));
+
+  const contentType = upstreamResponse.headers.get("content-type") || "";
+  if (body.stream || contentType.includes("text/event-stream")) {
+    await pipeStreamingResponse(upstreamResponse, response, state);
+    return;
+  }
+
+  const text = await upstreamResponse.text();
+  rememberNonStreamingResponse(text, state);
+  response.end(text);
+}
+
+function readRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 25 * 1024 * 1024) {
+        reject(new Error("request body exceeds 25MB alpha proxy limit"));
+        request.destroy();
+      }
+    });
+    request.on("end", () => resolve(body));
+    request.on("error", reject);
+  });
+}
+
+function parseProxyJson(bodyText) {
+  try {
+    return JSON.parse(bodyText || "{}");
+  } catch (error) {
+    throw new Error(`invalid JSON request body: ${error.message}`);
+  }
+}
+
+function repairReasoningContent(body, state) {
+  const findings = [];
+  let injected = 0;
+  if (!Array.isArray(body.messages)) return { injected, findings };
+
+  body.messages.forEach((message, messageIndex) => {
+    if (message?.role !== "assistant" || !Array.isArray(message.tool_calls) || message.reasoning_content) return;
+    const cached = message.tool_calls
+      .map((call) => call?.id && state.reasoningByToolCallId.get(call.id))
+      .filter(Boolean);
+    if (cached.length === 0) return;
+
+    const missingIds = message.tool_calls
+      .map((call) => call?.id)
+      .filter((id) => id && !state.reasoningByToolCallId.has(id));
+    if (missingIds.length > 0) {
+      findings.push(error(
+        "DSK_REASONING_002",
+        `messages[${messageIndex}]`,
+        `some tool calls have no cached reasoning_content: ${missingIds.join(", ")}. The proxy cannot reconstruct content it never saw.`,
+      ));
+      return;
+    }
+
+    message.reasoning_content = cached.map((entry) => entry.reasoningContent).join("\n");
+    injected += 1;
+    findings.push(warn(
+      "DSK_REASONING_003",
+      `messages[${messageIndex}]`,
+      `injected cached reasoning_content for ${cached.length} tool call(s).`,
+    ));
+  });
+
+  return { injected, findings };
+}
+
+function lintRequestSchemas(body, upstream) {
+  const findings = [];
+  if (!Array.isArray(body.tools)) return findings;
+
+  body.tools.forEach((tool, index) => {
+    const strict = Boolean(tool?.function?.strict || tool?.strict);
+    if (strict && !upstream.includes("/beta")) {
+      findings.push(warn("DSK_SCHEMA_002", `tools[${index}]`, "strict mode usually requires DeepSeek beta base URL: https://api.deepseek.com/beta"));
+    }
+
+    const parameters = extractSchema(tool);
+    const before = findings.length;
+    lintSchemaNode(parameters, `tools[${index}].function.parameters`, findings);
+    for (const finding of findings.slice(before)) finding.level = strict ? "ERROR" : "WARN";
+  });
+
+  return findings;
+}
+
+function buildUpstreamHeaders(headers, body) {
+  const output = {
+    "content-type": "application/json",
+    "accept": firstHeader(headers.accept) || "application/json",
+    "user-agent": "deepseek-compat-kit/0.1",
+  };
+
+  const authorization = firstHeader(headers.authorization);
+  if (authorization) output.authorization = authorization;
+  if (!output.authorization && process.env.DEEPSEEK_API_KEY) output.authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
+  const requestId = firstHeader(headers["x-request-id"]);
+  if (requestId) output["x-request-id"] = requestId;
+  if (body.stream) output.accept = "text/event-stream";
+  return output;
+}
+
+function firstHeader(value) {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function buildResponseHeaders(headers, repair, schemaFindings) {
+  const output = {};
+  for (const [key, value] of headers.entries()) {
+    const lowered = key.toLowerCase();
+    if (["content-encoding", "content-length", "connection", "transfer-encoding"].includes(lowered)) continue;
+    output[key] = value;
+  }
+  output["x-deepseek-compat-kit"] = "proxy-alpha";
+  output["x-deepseek-compat-reasoning-injected"] = String(repair.injected);
+  output["x-deepseek-compat-schema-findings"] = String(schemaFindings.length);
+  return output;
+}
+
+async function pipeStreamingResponse(upstreamResponse, response, state) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const streamState = new Map();
+
+  for await (const chunk of upstreamResponse.body) {
+    const text = typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+    response.write(text);
+    buffer += text;
+    buffer = consumeSseBuffer(buffer, streamState);
+  }
+
+  buffer += decoder.decode();
+  consumeSseBuffer(`${buffer}\n\n`, streamState);
+  rememberStreamingState(streamState, state);
+  response.end();
+}
+
+function consumeSseBuffer(buffer, streamState) {
+  const events = buffer.split(/\n\n/);
+  const remainder = events.pop() || "";
+  for (const event of events) {
+    const dataLines = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim());
+    for (const data of dataLines) {
+      if (!data || data === "[DONE]") continue;
+      try {
+        rememberStreamingChunk(JSON.parse(data), streamState);
+      } catch {
+        // Ignore non-JSON SSE payloads from nonstandard gateways.
+      }
+    }
+  }
+  return remainder;
+}
+
+function rememberStreamingChunk(chunk, streamState) {
+  for (const choice of chunk?.choices || []) {
+    const index = choice.index ?? 0;
+    const current = streamState.get(index) || { reasoning: "", toolCallIds: new Map() };
+    const delta = choice.delta || {};
+    if (typeof delta.reasoning_content === "string") current.reasoning += delta.reasoning_content;
+    if (Array.isArray(delta.tool_calls)) {
+      for (const toolCall of delta.tool_calls) {
+        const callIndex = toolCall.index ?? 0;
+        if (toolCall.id) current.toolCallIds.set(callIndex, toolCall.id);
+      }
+    }
+    streamState.set(index, current);
+  }
+}
+
+function rememberStreamingState(streamState, state) {
+  for (const current of streamState.values()) {
+    if (!current.reasoning) continue;
+    for (const id of current.toolCallIds.values()) {
+      rememberReasoning(id, current.reasoning, state);
+    }
+  }
+}
+
+function rememberNonStreamingResponse(text, state) {
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return;
+  }
+
+  for (const choice of payload?.choices || []) {
+    const message = choice.message;
+    if (!message?.reasoning_content || !Array.isArray(message.tool_calls)) continue;
+    for (const call of message.tool_calls) {
+      if (call?.id) rememberReasoning(call.id, message.reasoning_content, state);
+    }
+  }
+}
+
+function rememberReasoning(toolCallId, reasoningContent, state) {
+  state.reasoningByToolCallId.set(toolCallId, {
+    reasoningContent,
+    seenAt: Date.now(),
+  });
+
+  while (state.reasoningByToolCallId.size > state.maxEntries) {
+    const oldest = state.reasoningByToolCallId.keys().next().value;
+    state.reasoningByToolCallId.delete(oldest);
+  }
+}
+
+function normalizeBaseUrl(value) {
+  return String(value).replace(/\/+$/, "");
+}
+
+function warn(code, currentPath, message) {
+  return { level: "WARN", code, path: currentPath, message };
 }
 
 function error(code, currentPath, message) {

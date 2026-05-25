@@ -4,8 +4,8 @@ Early status for DeepSeek CompatKit.
 
 | Target | Mode | Status | Notes |
 | --- | --- | --- | --- |
-| Official DeepSeek API | OpenAI-compatible `/chat/completions` | PLANNED | v0.1 target |
-| Official DeepSeek API | local proxy | PLANNED | v0.1 target, single-process memory |
+| Official DeepSeek API | OpenAI-compatible `/chat/completions` | ALPHA | non-streaming tested through local mock upstream |
+| Official DeepSeek API | local proxy | ALPHA | single-process memory, stateful best-effort |
 | OpenAI JS SDK | baseURL proxy | UNKNOWN | v0.2 target |
 | OpenAI Python SDK | baseURL proxy | UNKNOWN | v0.2 target |
 | LangChain JS | tool calling | UNKNOWN | v0.2+ |
