@@ -1,5 +1,7 @@
 # DeepSeek CompatKit
 
+[![CI](https://github.com/xiaoshuo1988130/deepseek-compat-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoshuo1988130/deepseek-compat-kit/actions/workflows/ci.yml)
+
 [English](README.md)
 
 面向 DeepSeek V4 工具调用 Agent 的兼容性与诊断工具。
@@ -13,6 +15,14 @@ The reasoning_content in the thinking mode must be passed back to the API
 ```
 
 ## 当前 Alpha 命令
+
+运行一个不需要 API key 的本地 smoke demo：
+
+```bash
+git clone https://github.com/xiaoshuo1988130/deepseek-compat-kit.git
+cd deepseek-compat-kit
+npm run demo:mock
+```
 
 启动本地兼容 proxy：
 
@@ -86,6 +96,7 @@ npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.j
 
 - [OpenAI JS SDK baseURL proxy](examples/openai-js)
 - [curl proxy smoke test](examples/curl)
+- [No-key mock upstream demo](examples/mock-upstream)
 
 ## 状态
 

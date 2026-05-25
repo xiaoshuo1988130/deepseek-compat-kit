@@ -10,6 +10,16 @@ The reasoning_content in the thinking mode must be passed back to the API
 
 ## 1. Start the local proxy
 
+To verify the behavior without a DeepSeek API key first:
+
+```bash
+git clone https://github.com/xiaoshuo1988130/deepseek-compat-kit.git
+cd deepseek-compat-kit
+npm run demo:mock
+```
+
+Then use the real proxy against DeepSeek:
+
 ```bash
 DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787
 ```
@@ -64,4 +74,3 @@ npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.j
 ```
 
 The sanitizer redacts API keys, bearer tokens, emails, tool results, and `reasoning_content` bodies by default.
-

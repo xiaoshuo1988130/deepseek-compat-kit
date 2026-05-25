@@ -24,7 +24,9 @@
   ],
   "scripts": {
     "test": "node --test",
-    "lint": "node --check bin/deepseek-compat-kit.js"
+    "lint": "node --check bin/deepseek-compat-kit.js",
+    "test:examples": "node --check examples/openai-js/index.mjs && node --check examples/mock-upstream/server.mjs && node --check examples/mock-upstream/smoke.mjs",
+    "demo:mock": "node examples/mock-upstream/smoke.mjs"
   },
   "keywords": [
     "deepseek",
