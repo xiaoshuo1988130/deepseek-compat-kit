@@ -69,7 +69,6 @@ Initial proxy scope:
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
-- [Project plan](PROJECT_PLAN.md)
 
 ## Status
 
