@@ -130,6 +130,7 @@ Initial proxy scope:
 - [OpenAI JS SDK baseURL proxy](examples/openai-js)
 - [OpenAI JS multi-turn tool calling](examples/openai-js-tool-calls)
 - [OpenClaw integration guide](examples/openclaw)
+- [Hermes Agent integration guide](examples/hermes-agent)
 - [curl proxy smoke test](examples/curl)
 - [No-key mock upstream demo](examples/mock-upstream)
 

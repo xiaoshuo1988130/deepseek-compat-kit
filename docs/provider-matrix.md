@@ -13,6 +13,7 @@ Live DeepSeek regression tests are pending. Current proxy behavior is validated 
 | LangChain JS | tool calling | UNKNOWN | v0.2+ |
 | LlamaIndex | tool calling | UNKNOWN | v0.2+ |
 | OpenClaw | OpenAI-compatible provider config | DOCS_ONLY | integration guide added; live e2e pending |
+| Hermes Agent | DeepSeek/OpenAI-compatible base URL config | DOCS_ONLY | integration guide added; live e2e pending |
 | OpenCode | tool calling | UNKNOWN | v0.2+ |
 | vLLM | OpenAI-compatible runtime | UNKNOWN | v0.2+ |
 | OpenRouter | provider runtime | UNKNOWN | v0.2+ |
