@@ -125,15 +125,23 @@ npm run demo:mock
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.1 release notes](docs/releases/v0.1.1.md)
 
-## 示例
+## 示例与集成
+
+### 可运行 Demo
+
+- [OpenAI JS multi-turn tool calling](examples/openai-js-tool-calls)
+- [No-key mock upstream demo](examples/mock-upstream)
+- [curl proxy smoke test](examples/curl)
+
+### 集成配置指南
 
 - [OpenAI JS SDK baseURL proxy](examples/openai-js)
-- [OpenAI JS multi-turn tool calling](examples/openai-js-tool-calls)
 - [OpenClaw integration guide](examples/openclaw)
 - [Hermes Agent integration guide](examples/hermes-agent)
+
+### 兼容性边界说明
+
 - [Claude Code compatibility note](examples/claude-code)
-- [curl proxy smoke test](examples/curl)
-- [No-key mock upstream demo](examples/mock-upstream)
 
 ## 状态
 
