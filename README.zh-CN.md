@@ -115,6 +115,7 @@ npm run demo:mock
 ## 示例
 
 - [OpenAI JS SDK baseURL proxy](examples/openai-js)
+- [OpenAI JS multi-turn tool calling](examples/openai-js-tool-calls)
 - [curl proxy smoke test](examples/curl)
 - [No-key mock upstream demo](examples/mock-upstream)
 

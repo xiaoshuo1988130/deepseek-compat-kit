@@ -26,3 +26,5 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Run OpenAI JS tool-calling example
+        run: npm run test:openai-js-tool-calls
