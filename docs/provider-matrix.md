@@ -2,6 +2,8 @@
 
 Early status for DeepSeek CompatKit.
 
+Live DeepSeek regression tests are pending. Current proxy behavior is validated against the repository mock upstream and local unit tests.
+
 | Target | Mode | Status | Notes |
 | --- | --- | --- | --- |
 | Official DeepSeek API | OpenAI-compatible `/chat/completions` | ALPHA | non-streaming tested through local mock upstream |
@@ -13,3 +15,9 @@ Early status for DeepSeek CompatKit.
 | OpenCode | tool calling | UNKNOWN | v0.2+ |
 | vLLM | OpenAI-compatible runtime | UNKNOWN | v0.2+ |
 | OpenRouter | provider runtime | UNKNOWN | v0.2+ |
+
+## Known Alpha Risks
+
+- Proxy state is single-process memory and currently keyed by `tool_call_id`.
+- Long-running multi-client proxy usage needs explicit conversation/session isolation before it should be treated as production infrastructure.
+- Live DeepSeek API compatibility tests should be added before marking provider support as PASS.

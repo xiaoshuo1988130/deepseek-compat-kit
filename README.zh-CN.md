@@ -119,7 +119,7 @@ npm run demo:mock
 
 ## 状态
 
-项目处于早期 public alpha 阶段。第一目标是先打穿一个窄而可靠的切口：赢下 `reasoning_content` 400 诊断、strict schema 检查和最小 local proxy，再扩展到 SDK shim、框架示例、Docker、成本与 cache 可观测性。
+项目处于早期 public alpha 阶段。proxy 行为已经通过无 API key 的 mock upstream demo 验证；真实 DeepSeek live regression tests 仍待补充。第一目标是先打穿一个窄而可靠的切口：赢下 `reasoning_content` 400 诊断、strict schema 检查和最小 local proxy，再扩展到 SDK shim、框架示例、Docker、成本与 cache 可观测性。
 
 ## License
 

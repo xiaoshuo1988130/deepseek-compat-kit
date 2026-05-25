@@ -124,11 +124,6 @@ function lintSchemaNode(node, currentPath, findings) {
     "maxLength",
     "minItems",
     "maxItems",
-    "pattern",
-    "format",
-    "minimum",
-    "maximum",
-    "multipleOf",
   ];
 
   for (const key of unsupported) {
@@ -412,7 +407,8 @@ function repairReasoningContent(body, state) {
       return;
     }
 
-    message.reasoning_content = cached.map((entry) => entry.reasoningContent).join("\n");
+    const uniqueReasoning = [...new Set(cached.map((entry) => entry.reasoningContent))];
+    message.reasoning_content = uniqueReasoning.join("\n");
     injected += 1;
     findings.push(warn(
       "DSK_REASONING_003",

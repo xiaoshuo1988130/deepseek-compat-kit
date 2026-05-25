@@ -119,7 +119,7 @@ Initial proxy scope:
 
 ## Status
 
-This repository is in early public alpha. The first target is a narrow, reliable cut: win `reasoning_content` 400 diagnostics, strict schema checks, and a minimal local proxy before expanding into SDK shims, framework examples, Docker, and cost/cache observability.
+This repository is in early public alpha. The proxy behavior is validated against the no-key mock upstream demo; live DeepSeek regression tests are still pending. The first target is a narrow, reliable cut: win `reasoning_content` 400 diagnostics, strict schema checks, and a minimal local proxy before expanding into SDK shims, framework examples, Docker, and cost/cache observability.
 
 ## License
 

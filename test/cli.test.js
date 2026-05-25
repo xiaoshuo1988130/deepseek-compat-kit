@@ -30,6 +30,34 @@ test("lint-schema reports DeepSeek strict-mode object requirements", () => {
   assert.match(result.stdout, /DSK_SCHEMA_004/);
 });
 
+test("lint-schema accepts DeepSeek-supported strict schema constraints", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const schemaPath = path.join(dir, "schema.json");
+  fs.writeFileSync(schemaPath, JSON.stringify({
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        code: { type: "string", pattern: "^[A-Z]+$", format: "regex" },
+        score: { type: "number", minimum: 0, maximum: 10, multipleOf: 0.5 },
+      },
+      required: ["code", "score"],
+      additionalProperties: false,
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "lint-schema",
+    schemaPath,
+    "--strict",
+    "--base-url",
+    "https://api.deepseek.com/beta",
+  ], { encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /schema ok/);
+});
+
 test("diagnose detects dropped reasoning_content", () => {
   const result = spawnSync(process.execPath, [bin, "diagnose", "fixtures/tool-calls/reasoning-content-lost.jsonl"], { encoding: "utf8" });
   assert.equal(result.status, 1);
@@ -127,6 +155,76 @@ test("proxy injects cached reasoning_content before forwarding follow-up tool ca
 
   assert.equal(upstreamRequests.length, 2);
   assert.equal(upstreamRequests[1].messages[0].reasoning_content, "cached private reasoning");
+});
+
+test("proxy deduplicates shared reasoning_content across multiple tool calls", async (t) => {
+  const upstreamRequests = [];
+  const upstream = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      upstreamRequests.push(body);
+      response.writeHead(200, { "content-type": "application/json" });
+      if (upstreamRequests.length === 1) {
+        response.end(JSON.stringify({
+          choices: [{
+            message: {
+              role: "assistant",
+              reasoning_content: "shared reasoning",
+              tool_calls: [
+                { id: "call_one", type: "function", function: { name: "one", arguments: "{}" } },
+                { id: "call_two", type: "function", function: { name: "two", arguments: "{}" } },
+              ],
+            },
+          }],
+        }));
+        return;
+      }
+
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(upstream);
+  const proxyPort = await freePort();
+  const proxy = spawn(process.execPath, [bin, "proxy", "--port", String(proxyPort), "--upstream", upstreamUrl], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  t.after(() => {
+    proxy.kill();
+    upstream.close();
+  });
+
+  await waitForOutput(proxy.stderr, /proxy alpha listening/);
+
+  const proxyUrl = `http://127.0.0.1:${proxyPort}/v1/chat/completions`;
+  await fetch(proxyUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model: "deepseek-reasoner", messages: [{ role: "user", content: "first" }] }),
+  });
+
+  const second = await fetch(proxyUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "deepseek-reasoner",
+      messages: [{
+        role: "assistant",
+        tool_calls: [
+          { id: "call_one", type: "function", function: { name: "one", arguments: "{}" } },
+          { id: "call_two", type: "function", function: { name: "two", arguments: "{}" } },
+        ],
+      }],
+    }),
+  });
+  assert.equal(second.status, 200);
+  await second.json();
+
+  assert.equal(upstreamRequests.length, 2);
+  assert.equal(upstreamRequests[1].messages[0].reasoning_content, "shared reasoning");
 });
 
 function collectRequestJson(request) {
