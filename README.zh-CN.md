@@ -45,6 +45,15 @@ const client = new OpenAI({
 });
 ```
 
+终端里应该能看到类似输出：
+
+```text
+[deepseek-compat-kit] proxy alpha listening on http://127.0.0.1:8787/v1
+WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool call(s).
+[openai-js-tool-calls] final: mock upstream received repaired reasoning_content
+[openai-js-tool-calls] proxy injected reasoning_content: true
+```
+
 ## 命令
 
 proxy 默认转发到 `https://api.deepseek.com`。如果要测试或接自托管网关：

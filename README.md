@@ -45,6 +45,15 @@ const client = new OpenAI({
 });
 ```
 
+What you should see in the terminal:
+
+```text
+[deepseek-compat-kit] proxy alpha listening on http://127.0.0.1:8787/v1
+WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool call(s).
+[openai-js-tool-calls] final: mock upstream received repaired reasoning_content
+[openai-js-tool-calls] proxy injected reasoning_content: true
+```
+
 ## Commands
 
 The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
