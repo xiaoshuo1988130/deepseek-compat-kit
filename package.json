@@ -1,0 +1,28 @@
+{
+  "name": "deepseek-compat-kit",
+  "version": "0.0.1",
+  "description": "Compatibility and diagnostics for DeepSeek V4 tool-calling agents.",
+  "type": "module",
+  "bin": {
+    "deepseek-compat-kit": "./bin/deepseek-compat-kit.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check bin/deepseek-compat-kit.js"
+  },
+  "keywords": [
+    "deepseek",
+    "deepseek-v4",
+    "tool-calling",
+    "reasoning-content",
+    "openai-compatible",
+    "llm-proxy",
+    "agent-debugging",
+    "json-schema"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}
