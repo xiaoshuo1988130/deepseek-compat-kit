@@ -10,7 +10,27 @@ Fix and diagnose:
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-## Quickstart
+## Current Pre-Alpha Commands
+
+Diagnose a saved run:
+
+```bash
+npx deepseek-compat-kit diagnose ./logs/deepseek-run.jsonl
+```
+
+Check a DeepSeek strict-mode tool schema:
+
+```bash
+npx deepseek-compat-kit lint-schema ./tools.schema.json --strict --base-url https://api.deepseek.com/beta
+```
+
+Create a sanitized replay fixture:
+
+```bash
+npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
+```
+
+## Upcoming Proxy Alpha
 
 Run a local compatibility proxy:
 
@@ -22,24 +42,6 @@ Point your OpenAI-compatible client at:
 
 ```text
 http://127.0.0.1:8787/v1
-```
-
-Diagnose a saved run:
-
-```bash
-npx deepseek-compat-kit diagnose ./logs/deepseek-run.jsonl
-```
-
-Check a DeepSeek strict-mode tool schema:
-
-```bash
-npx deepseek-compat-kit lint-schema ./tools.schema.json
-```
-
-Create a sanitized replay fixture:
-
-```bash
-npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
 ```
 
 ## What It Solves First
