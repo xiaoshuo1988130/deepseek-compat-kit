@@ -8,13 +8,17 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Fix DeepSeek V4 tool-calling migrations with a local OpenAI-compatible proxy. Start the proxy, change your client `baseURL`, and keep the rest of your agent loop unchanged while you diagnose the failure.
 
+> Migration window: DeepSeek says `deepseek-chat` and `deepseek-reasoner` will be discontinued on **2026-07-24**. If your agent depends on multi-turn tool calling, test the V4 path now.
+>
+> Source: [DeepSeek API Docs Change Log](https://api-docs.deepseek.com/updates/)
+
 Built first for this error:
 
 ```text
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-DeepSeek legacy models `deepseek-chat` and `deepseek-reasoner` are scheduled for deprecation on **2026-07-24**. If your OpenAI-compatible agent loop breaks during the V4 migration, DeepSeek CompatKit helps diagnose and temporarily mitigate common tool-calling failures.
+If your OpenAI-compatible agent loop breaks during the V4 migration, DeepSeek CompatKit helps diagnose and temporarily mitigate common tool-calling failures.
 
 ## Quickstart
 

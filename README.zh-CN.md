@@ -8,13 +8,17 @@
 
 用一个本地 OpenAI-compatible proxy 修复和诊断 DeepSeek V4 tool-calling 迁移问题。启动 proxy，把客户端 `baseURL` 指过去，先尽量不改现有 Agent loop。
 
+> 迁移窗口：DeepSeek 官方说明 `deepseek-chat` 和 `deepseek-reasoner` 将在 **2026-07-24** 停用。如果你的 Agent 依赖多轮 tool calling，建议现在就验证 V4 路径。
+>
+> 来源：[DeepSeek API Docs Change Log](https://api-docs.deepseek.com/updates/)
+
 优先解决这个常见错误：
 
 ```text
 The reasoning_content in the thinking mode must be passed back to the API
 ```
 
-DeepSeek 旧模型 `deepseek-chat` 和 `deepseek-reasoner` 计划在 **2026-07-24** 停用。如果你的 OpenAI-compatible Agent 在迁移 V4 时出现多轮工具调用错误，DeepSeek CompatKit 可以帮助定位问题，并提供临时兼容缓解方案。
+如果你的 OpenAI-compatible Agent 在迁移 V4 时出现多轮工具调用错误，DeepSeek CompatKit 可以帮助定位问题，并提供临时兼容缓解方案。
 
 ## Quickstart
 
