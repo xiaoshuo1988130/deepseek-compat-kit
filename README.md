@@ -63,18 +63,19 @@ WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool
 Compile a Zod/Pydantic/generated JSON Schema into a DeepSeek strict-mode compatible schema:
 
 ```bash
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json
 ```
 
-The report includes removed constraints, a `system_prompt_appendix`, and a `post_validation_plan` for checks that must move back into application code.
+Use `--dry-run` first to preview planned changes without writing files. The report includes removed constraints, a `system_prompt_appendix`, and a `post_validation_plan` for checks that must move back into application code.
 
 Probe an official, relay, or self-hosted OpenAI-compatible endpoint:
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
-`probe` is a small functional compatibility check, not a benchmark or load test.
+`probe` is a small functional compatibility check, not a benchmark or load test. The Markdown report is meant for team handoff or upstream issue triage.
 
 Print a no-write OpenCode setup recipe:
 

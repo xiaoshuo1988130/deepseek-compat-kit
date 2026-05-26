@@ -121,6 +121,45 @@ test("compile-schema writes DeepSeek strict schema and loss report", () => {
   assert.match(report.system_prompt_appendix, /at most 3 item/);
 });
 
+test("compile-schema dry-run prints repair plan without writing files", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const schemaPath = path.join(dir, "schema.json");
+  const outPath = path.join(dir, "deepseek.schema.json");
+  const reportPath = path.join(dir, "report.json");
+  fs.writeFileSync(schemaPath, JSON.stringify({
+    parameters: {
+      type: "object",
+      properties: {
+        username: { type: "string", minLength: 3 },
+        count: { type: "number" },
+      },
+      required: ["username"],
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "compile-schema",
+    "-i",
+    schemaPath,
+    "-o",
+    outPath,
+    "--report",
+    reportPath,
+    "--dry-run",
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /compile-schema dry run; no files written/);
+  assert.match(result.stdout, /planned_changes/);
+  assert.match(result.stdout, /REMOVE \$\.properties\.username\.minLength/);
+  assert.match(result.stdout, /ADD \$\.required: count/);
+  assert.match(result.stdout, /SET \$\.additionalProperties: false/);
+  assert.match(result.stdout, /post_validation: properties\.username must have a minimum string length of 3/);
+  assert.equal(fs.existsSync(outPath), false);
+  assert.equal(fs.existsSync(reportPath), false);
+});
+
 test("probe writes endpoint capability report against mock upstream", async (t) => {
   const mock = http.createServer((request, response) => {
     collectRequestJson(request).then((body) => {
@@ -152,6 +191,7 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
   const reportPath = path.join(dir, "capability-report.json");
+  const markdownPath = path.join(dir, "Capability_Report.md");
   const result = await runNode([
     bin,
     "probe",
@@ -161,10 +201,13 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
     "mock-model",
     "--out",
     reportPath,
+    "--markdown",
+    markdownPath,
   ]);
 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /wrote capability report/);
+  assert.match(result.stdout, /wrote markdown capability report/);
 
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   assert.equal(report.summary.status, "PASS");
@@ -174,6 +217,11 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
     "streaming",
     "strict_schema_request",
   ]);
+
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert.match(markdown, /# DeepSeek CompatKit Capability Report/);
+  assert.match(markdown, /Status: \*\*PASS\*\*/);
+  assert.match(markdown, /\| `chat_completions` \| PASS \| 200 \|/);
 });
 
 test("recipes lists and prints the OpenCode recipe", () => {

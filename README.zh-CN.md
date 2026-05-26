@@ -63,18 +63,19 @@ WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool
 把 Zod/Pydantic 等生成的 JSON Schema 编译为 DeepSeek strict mode 兼容 schema：
 
 ```bash
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json
 ```
 
-报告会包含被移除的约束、`system_prompt_appendix` 和需要回到应用层执行的 `post_validation_plan`。
+建议先用 `--dry-run` 预览计划改动，不写入文件。报告会包含被移除的约束、`system_prompt_appendix` 和需要回到应用层执行的 `post_validation_plan`。
 
 探测官方、中转商或自托管 OpenAI-compatible endpoint 的 Agent 能力：
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
-`probe` 是小请求量的功能兼容性检查，不是压测或模型质量评测。
+`probe` 是小请求量的功能兼容性检查，不是压测或模型质量评测。Markdown 报告适合发给团队或提交给上游 issue。
 
 打印一个只读、不改配置的 OpenCode 接入处方：
 

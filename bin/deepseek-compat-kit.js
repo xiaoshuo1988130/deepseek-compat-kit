@@ -12,8 +12,8 @@ const help = `DeepSeek CompatKit
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
-  compile-schema -i <schema.json> -o <deepseek.schema.json> [--report <report.json>]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--profile official|openai]
+  compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
   doctor --target opencode --print
   recipes [opencode]
   lint-schema <schema.json> [--strict] [--base-url <url>]
@@ -94,15 +94,22 @@ function compileSchema(args) {
   const inputPath = argValue(args, "-i") || argValue(args, "--input") || args.find((arg) => !arg.startsWith("-"));
   const outputPath = argValue(args, "-o") || argValue(args, "--out");
   const reportPath = argValue(args, "--report");
+  const dryRun = args.includes("--dry-run");
 
   if (!inputPath) {
-    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>]");
+    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]");
     return 2;
   }
 
   const document = readJson(inputPath);
   const { document: compiled, report } = compileDeepSeekSchema(document);
   const compiledText = `${JSON.stringify(compiled, null, 2)}\n`;
+
+  if (dryRun) {
+    console.log("[deepseek-compat-kit] compile-schema dry run; no files written.");
+    printCompilePlan(report);
+    return 0;
+  }
 
   if (outputPath) {
     fs.writeFileSync(path.resolve(outputPath), compiledText);
@@ -248,14 +255,41 @@ function printCompileReport(report) {
   }
 }
 
+function printCompilePlan(report) {
+  printCompileReport(report);
+  console.log("planned_changes:");
+
+  let changes = 0;
+  for (const item of report.removed_constraints) {
+    changes += 1;
+    console.log(`- REMOVE ${item.path}: ${item.keyword}=${JSON.stringify(item.value)}`);
+    console.log(`  post_validation: ${item.prompt_instruction}`);
+  }
+
+  for (const item of report.required_added) {
+    changes += 1;
+    console.log(`- ADD ${item.path}: ${item.properties.join(", ")}`);
+  }
+
+  for (const item of report.additional_properties_fixed) {
+    changes += 1;
+    console.log(`- SET ${item.path}: false`);
+  }
+
+  if (changes === 0) {
+    console.log("- none");
+  }
+}
+
 async function probeEndpoint(args) {
   const endpoint = argValue(args, "--endpoint") || argValue(args, "--base-url");
   const model = argValue(args, "--model") || "deepseek-chat";
   const profile = argValue(args, "--profile") || "openai";
   const outputPath = argValue(args, "--out");
+  const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--profile official|openai]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]");
     return 2;
   }
 
@@ -305,6 +339,11 @@ async function probeEndpoint(args) {
     console.log(`[deepseek-compat-kit] wrote capability report: ${outputPath}`);
   } else {
     process.stdout.write(text);
+  }
+
+  if (markdownPath) {
+    fs.writeFileSync(path.resolve(markdownPath), renderProbeMarkdown(report));
+    console.log(`[deepseek-compat-kit] wrote markdown capability report: ${markdownPath}`);
   }
 
   return report.summary.failed > 0 ? 1 : 0;
@@ -440,6 +479,52 @@ function summarizeProbe(report) {
   if (report.summary.failed > 0) report.summary.status = "FAIL";
   else if (report.summary.warned > 0) report.summary.status = "WARN";
   else report.summary.status = "PASS";
+}
+
+function renderProbeMarkdown(report) {
+  const lines = [
+    "# DeepSeek CompatKit Capability Report",
+    "",
+    `Generated: ${report.generated_at}`,
+    `Endpoint: \`${report.endpoint}\``,
+    `Profile: \`${report.profile}\``,
+    `Model: \`${report.model}\``,
+    `Scope: ${report.scope}`,
+    "",
+    "## Summary",
+    "",
+    `Status: **${report.summary.status}**`,
+    "",
+    `Passed: ${report.summary.passed}`,
+    `Warned: ${report.summary.warned}`,
+    `Failed: ${report.summary.failed}`,
+    "",
+    "## Checks",
+    "",
+    "| Check | Status | HTTP | Duration | Notes |",
+    "| --- | --- | --- | --- | --- |",
+  ];
+
+  for (const check of report.checks) {
+    const notes = check.notes.length > 0 ? check.notes.join("<br>") : "";
+    lines.push(`| \`${escapeMarkdownTable(check.name)}\` | ${check.status} | ${check.http_status ?? ""} | ${check.duration_ms ?? ""} ms | ${escapeMarkdownTable(notes)} |`);
+  }
+
+  lines.push(
+    "",
+    "## Boundary",
+    "",
+    "- This is a functional compatibility probe, not a throughput benchmark, latency benchmark, or model quality evaluation.",
+    "- Passing this probe does not guarantee full framework compatibility.",
+    "- If a check warns or fails, attach the JSON report and this Markdown report when opening an upstream issue.",
+    "",
+  );
+
+  return `${lines.join("\n")}\n`;
+}
+
+function escapeMarkdownTable(value) {
+  return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 }
 
 function recipes(args) {

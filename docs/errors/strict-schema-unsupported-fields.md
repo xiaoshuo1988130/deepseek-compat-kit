@@ -27,8 +27,11 @@ Automatic repair must be explicit and auditable. A schema repair that removes co
 Use `compile-schema` to generate a DeepSeek strict-mode compatible schema and a loss report:
 
 ```bash
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json
 ```
+
+`--dry-run` prints the planned changes and post-validation requirements without writing files.
 
 The compiler will:
 

@@ -21,10 +21,10 @@ npm run demo:mock
 You can also run a small functional endpoint probe against a mock or self-hosted endpoint:
 
 ```bash
-npx deepseek-compat-kit probe --endpoint http://127.0.0.1:9000 --model mock-model --out ./capability-report.json
+npx deepseek-compat-kit probe --endpoint http://127.0.0.1:9000 --model mock-model --out ./capability-report.json --markdown ./Capability_Report.md
 ```
 
-`probe` checks basic chat completions, streaming response shape, and a minimal strict tool schema request. It is not a benchmark or load test.
+`probe` checks basic chat completions, streaming response shape, and a minimal strict tool schema request. It is not a benchmark or load test. The Markdown report is designed for team handoff or upstream issue triage.
 
 Then use the real proxy against DeepSeek:
 

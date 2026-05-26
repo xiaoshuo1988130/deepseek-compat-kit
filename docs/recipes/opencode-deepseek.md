@@ -28,7 +28,7 @@ http://127.0.0.1:8787/v1
 Probe the path before using it for a real task:
 
 ```bash
-npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json
+npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
 If a tool schema fails under strict mode, compile and inspect it:
