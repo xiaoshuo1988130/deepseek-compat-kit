@@ -314,14 +314,20 @@ async function probeEndpoint(args) {
 
   report.checks.push(await runProbeCheck({
     name: "chat_completions",
+    capability: "chat_completions",
     description: "POST /chat/completions accepts a minimal non-streaming request.",
+    impact: "Basic OpenAI-compatible request path works.",
+    recommendation: "If this fails, verify that the endpoint root is correct, includes the right /v1 prefix, uses a valid API key, and exposes the selected model.",
     request: buildProbeRequest({ model, stream: false }),
     baseUrl,
   }));
 
   report.checks.push(await runProbeCheck({
     name: "streaming",
+    capability: "streaming",
     description: "POST /chat/completions accepts stream: true and returns an event-stream-like response.",
+    impact: "Streaming clients can parse incremental responses from this endpoint.",
+    recommendation: "If this warns or fails, disable streaming while triaging the provider or gateway, then retest after the endpoint is fixed.",
     request: buildProbeRequest({ model, stream: true }),
     baseUrl,
     expectStream: true,
@@ -329,7 +335,10 @@ async function probeEndpoint(args) {
 
   report.checks.push(await runProbeCheck({
     name: "strict_schema_request",
+    capability: "strict_schema",
     description: "Endpoint accepts a minimal strict tool schema request.",
+    impact: "Tool-calling agents can send DeepSeek strict-mode compatible function schemas.",
+    recommendation: "If this warns or fails, run compile-schema and lint-schema first, then confirm that the provider supports DeepSeek strict schema semantics.",
     request: buildStrictSchemaProbeRequest(model),
     baseUrl,
   }));
@@ -395,11 +404,14 @@ function buildStrictSchemaProbeRequest(model) {
   };
 }
 
-async function runProbeCheck({ name, description, request, baseUrl, expectStream = false }) {
+async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false }) {
   const started = Date.now();
   const check = {
     name,
+    capability,
     description,
+    impact,
+    recommendation,
     status: "UNKNOWN",
     http_status: null,
     duration_ms: null,
@@ -472,10 +484,12 @@ async function drainProbeResponse(response) {
 }
 
 function summarizeProbe(report) {
+  report.summary.capabilities = {};
   for (const check of report.checks) {
     if (check.status === "PASS") report.summary.passed += 1;
     else if (check.status === "WARN") report.summary.warned += 1;
     else report.summary.failed += 1;
+    report.summary.capabilities[check.capability] = check.status;
   }
 
   if (report.summary.failed > 0) report.summary.status = "FAIL";
@@ -503,13 +517,23 @@ function renderProbeMarkdown(report) {
     "",
     "## Checks",
     "",
-    "| Check | Status | HTTP | Duration | Notes |",
-    "| --- | --- | --- | --- | --- |",
+    "| Capability | Check | Status | HTTP | Duration | Impact | Notes |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
   ];
 
   for (const check of report.checks) {
     const notes = check.notes.length > 0 ? check.notes.join("<br>") : "";
-    lines.push(`| \`${escapeMarkdownTable(check.name)}\` | ${check.status} | ${check.http_status ?? ""} | ${check.duration_ms ?? ""} ms | ${escapeMarkdownTable(notes)} |`);
+    lines.push(`| \`${escapeMarkdownTable(check.capability)}\` | \`${escapeMarkdownTable(check.name)}\` | ${check.status} | ${check.http_status ?? ""} | ${check.duration_ms ?? ""} ms | ${escapeMarkdownTable(check.impact)} | ${escapeMarkdownTable(notes)} |`);
+  }
+
+  const actionable = report.checks.filter((check) => check.status !== "PASS");
+  lines.push("", "## Recommendations", "");
+  if (actionable.length === 0) {
+    lines.push("- No immediate compatibility issues were detected by this functional probe.");
+  } else {
+    for (const check of actionable) {
+      lines.push(`- \`${check.capability}\`: ${check.recommendation}`);
+    }
   }
 
   lines.push(

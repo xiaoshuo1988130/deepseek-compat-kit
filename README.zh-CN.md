@@ -159,6 +159,7 @@ npm run demo:mock
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
+- [Capability probe](docs/capability-probe.md)
 - [Adoption doctor and inventory](docs/adoption-doctor.md)
 - [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
 - [Cline + DeepSeek recipe](docs/recipes/cline-deepseek.md)

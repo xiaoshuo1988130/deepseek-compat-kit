@@ -212,16 +212,29 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   assert.equal(report.summary.status, "PASS");
   assert.equal(report.summary.passed, 3);
+  assert.deepEqual(report.summary.capabilities, {
+    chat_completions: "PASS",
+    streaming: "PASS",
+    strict_schema: "PASS",
+  });
   assert.deepEqual(report.checks.map((check) => check.name), [
     "chat_completions",
     "streaming",
     "strict_schema_request",
   ]);
+  assert.deepEqual(report.checks.map((check) => check.capability), [
+    "chat_completions",
+    "streaming",
+    "strict_schema",
+  ]);
+  assert.match(report.checks[2].recommendation, /compile-schema/);
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /# DeepSeek CompatKit Capability Report/);
   assert.match(markdown, /Status: \*\*PASS\*\*/);
-  assert.match(markdown, /\| `chat_completions` \| PASS \| 200 \|/);
+  assert.match(markdown, /\| `chat_completions` \| `chat_completions` \| PASS \| 200 \|/);
+  assert.match(markdown, /## Recommendations/);
+  assert.match(markdown, /No immediate compatibility issues/);
 });
 
 test("inventory reports DeepSeek hints without leaking secret values", () => {
