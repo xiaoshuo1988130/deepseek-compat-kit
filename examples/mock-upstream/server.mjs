@@ -32,7 +32,47 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (Array.isArray(body.tools)) {
+  if (body.messages?.[0]?.content === "Reply with exactly: ok") {
+    writeJson(response, 200, {
+      id: "mock-probe-chat",
+      object: "chat.completion",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "ok" },
+        finish_reason: "stop",
+      }],
+    });
+    return;
+  }
+
+  const assistantMessage = body.messages?.find((message) => message.role === "assistant" && Array.isArray(message.tool_calls));
+  if (assistantMessage) {
+    const receivedReasoning = Boolean(assistantMessage.reasoning_content);
+    writeJson(response, 200, {
+      id: "mock-turn-2",
+      object: "chat.completion",
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: receivedReasoning
+            ? "mock upstream received repaired reasoning_content"
+            : "mock upstream did not receive reasoning_content",
+        },
+        finish_reason: "stop",
+      }],
+      mock: {
+        received_reasoning_content: receivedReasoning,
+        reasoning_content_length: assistantMessage.reasoning_content?.length || 0,
+      },
+    });
+    return;
+  }
+
+  const toolNames = Array.isArray(body.tools)
+    ? body.tools.map((tool) => tool.function?.name).filter(Boolean)
+    : [];
+  if (toolNames.includes("record_query")) {
     writeJson(response, 200, {
       id: "mock-strict-schema",
       object: "chat.completion",
@@ -55,20 +95,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  if (body.messages?.[0]?.content === "Reply with exactly: ok") {
-    writeJson(response, 200, {
-      id: "mock-probe-chat",
-      object: "chat.completion",
-      choices: [{
-        index: 0,
-        message: { role: "assistant", content: "ok" },
-        finish_reason: "stop",
-      }],
-    });
-    return;
-  }
-
-  if (requests.length === 1) {
+  if (toolNames.includes("get_weather") || requests.length === 1) {
     writeJson(response, 200, {
       id: "mock-turn-1",
       object: "chat.completion",
@@ -92,25 +119,17 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const assistantMessage = body.messages?.find((message) => message.role === "assistant" && Array.isArray(message.tool_calls));
-  const receivedReasoning = Boolean(assistantMessage?.reasoning_content);
   writeJson(response, 200, {
-    id: "mock-turn-2",
+    id: "mock-chat",
     object: "chat.completion",
     choices: [{
       index: 0,
       message: {
         role: "assistant",
-        content: receivedReasoning
-          ? "mock upstream received repaired reasoning_content"
-          : "mock upstream did not receive reasoning_content",
+        content: "ok",
       },
       finish_reason: "stop",
     }],
-    mock: {
-      received_reasoning_content: receivedReasoning,
-      reasoning_content_length: assistantMessage?.reasoning_content?.length || 0,
-    },
   });
 });
 
