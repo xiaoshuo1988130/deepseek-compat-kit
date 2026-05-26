@@ -17,6 +17,18 @@ It is not a latency benchmark, throughput benchmark, or model quality evaluation
 npx deepseek-compat-kit probe \
   --endpoint https://api.deepseek.com \
   --model deepseek-chat \
+  --profile official \
+  --out ./deepseek-capability-report.json \
+  --markdown ./Capability_Report.md
+```
+
+For a third-party relay:
+
+```bash
+npx deepseek-compat-kit probe \
+  --endpoint https://relay.example.com/v1 \
+  --model deepseek-chat \
+  --profile relay \
   --out ./deepseek-capability-report.json \
   --markdown ./Capability_Report.md
 ```
@@ -27,9 +39,21 @@ For a local proxy or self-hosted gateway:
 npx deepseek-compat-kit probe \
   --endpoint http://127.0.0.1:8787 \
   --model deepseek-chat \
+  --profile self-hosted \
   --out ./deepseek-capability-report.json \
   --markdown ./Capability_Report.md
 ```
+
+## Profiles
+
+Use `--profile` to tune report guidance:
+
+| Profile | Use When | Aliases |
+| --- | --- | --- |
+| `official` | Calling the official DeepSeek API directly. | `deepseek`, `deepseek-official` |
+| `openai` | Generic OpenAI-compatible endpoint. | `openai-compatible`, `generic` |
+| `relay` | Third-party relay or API gateway. | `gateway`, `provider`, `third-party` |
+| `self-hosted` | Local or private OpenAI-compatible server. | `vllm`, `ollama`, `local` |
 
 ## Current Checks
 
@@ -45,6 +69,7 @@ The JSON report includes:
 
 - `summary.status`: `PASS`, `WARN`, or `FAIL`.
 - `summary.capabilities`: per-capability status.
+- `profile_guidance`: endpoint-specific hints, risks, and next steps.
 - `checks[]`: check-level HTTP status, duration, notes, impact, and recommendation.
 
 The Markdown report includes the same matrix plus human-readable recommendations.

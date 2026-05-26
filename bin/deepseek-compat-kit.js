@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -286,12 +286,16 @@ function printCompilePlan(report) {
 async function probeEndpoint(args) {
   const endpoint = argValue(args, "--endpoint") || argValue(args, "--base-url");
   const model = argValue(args, "--model") || "deepseek-chat";
-  const profile = argValue(args, "--profile") || "openai";
+  const profile = normalizeProbeProfile(argValue(args, "--profile") || "openai");
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted]");
+    return 2;
+  }
+  if (!profile) {
+    console.error("Unknown probe profile. Available profiles: official, openai, relay, self-hosted");
     return 2;
   }
 
@@ -301,6 +305,7 @@ async function probeEndpoint(args) {
     generated_at: new Date().toISOString(),
     endpoint: baseUrl,
     profile,
+    profile_guidance: buildProbeProfileGuidance(profile, baseUrl),
     model,
     scope: "functional compatibility probe, not a benchmark",
     checks: [],
@@ -358,6 +363,81 @@ async function probeEndpoint(args) {
   }
 
   return report.summary.failed > 0 ? 1 : 0;
+}
+
+function normalizeProbeProfile(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["official", "deepseek", "deepseek-official"].includes(normalized)) return "official";
+  if (["openai", "openai-compatible", "generic"].includes(normalized)) return "openai";
+  if (["relay", "gateway", "provider", "third-party"].includes(normalized)) return "relay";
+  if (["self-hosted", "self_hosted", "vllm", "ollama", "local"].includes(normalized)) return "self-hosted";
+  return "";
+}
+
+function buildProbeProfileGuidance(profile, endpoint) {
+  if (profile === "official") {
+    return {
+      name: "Official DeepSeek API",
+      endpoint_hint: "Use https://api.deepseek.com for normal requests and https://api.deepseek.com/beta when validating strict-mode schema behavior.",
+      strict_schema_hint: "Strict-mode tool schemas require DeepSeek-compatible object rules; run lint-schema with the beta base URL before filing endpoint issues.",
+      known_risks: [
+        "Do not append /v1 to the official DeepSeek endpoint unless the official docs for your API path require it.",
+        "A passing normal chat check does not prove strict schema compatibility unless the strict_schema check also passes.",
+      ],
+      next_steps: [
+        "Run the same probe against your local proxy if you use DeepSeek CompatKit in front of the official API.",
+        "Attach both JSON and Markdown reports to framework issues.",
+      ],
+    };
+  }
+
+  if (profile === "relay") {
+    return {
+      name: "Third-party relay or API gateway",
+      endpoint_hint: "Most relay providers expose an OpenAI-compatible /v1 base URL, but each provider may map DeepSeek beta and strict-mode behavior differently.",
+      strict_schema_hint: "If strict_schema warns or fails, confirm whether the relay preserves DeepSeek strict schema semantics or silently rewrites tool definitions.",
+      known_risks: [
+        "Relays can buffer streaming responses and break event-stream clients.",
+        "Relays can normalize errors, hiding the original DeepSeek 400 payload.",
+        "Relays may not support beta endpoint behavior even if normal chat works.",
+      ],
+      next_steps: [
+        "Re-run probe directly against official DeepSeek to separate relay bugs from upstream behavior.",
+        "Ask the relay provider whether strict tool schemas and reasoning_content round-trips are preserved.",
+      ],
+    };
+  }
+
+  if (profile === "self-hosted") {
+    return {
+      name: "Self-hosted OpenAI-compatible endpoint",
+      endpoint_hint: `Endpoint under test: ${endpoint}. Self-hosted servers commonly expose a /v1 base URL, but implementation details vary by vLLM, Ollama, or custom gateway version.`,
+      strict_schema_hint: "Treat strict_schema as a compatibility signal, not a guarantee; many self-hosted stacks accept the request shape but do not enforce official DeepSeek strict-mode semantics.",
+      known_risks: [
+        "Streaming chunk shape can differ from official APIs.",
+        "Tool-call IDs, strict schemas, and reasoning content may be partially implemented.",
+        "Model names and tokenizer behavior may differ even when the endpoint is OpenAI-compatible.",
+      ],
+      next_steps: [
+        "Record the server implementation and version beside the probe report.",
+        "Run a framework-level smoke test after this probe passes.",
+      ],
+    };
+  }
+
+  return {
+    name: "Generic OpenAI-compatible endpoint",
+    endpoint_hint: "Confirm whether the base URL should include /v1. Do not pass a full /chat/completions URL as the endpoint.",
+    strict_schema_hint: "If strict_schema warns or fails, run compile-schema and lint-schema before changing application code.",
+    known_risks: [
+      "OpenAI-compatible usually means request shape compatibility, not identical tool-calling semantics.",
+      "Provider-specific streaming and error payloads can still break agent frameworks.",
+    ],
+    next_steps: [
+      "Use --profile official, relay, or self-hosted when you know the endpoint type.",
+      "Keep the JSON report for automated triage and the Markdown report for humans.",
+    ],
+  };
 }
 
 function buildProbeRequest({ model, stream }) {
@@ -506,6 +586,20 @@ function renderProbeMarkdown(report) {
     `Profile: \`${report.profile}\``,
     `Model: \`${report.model}\``,
     `Scope: ${report.scope}`,
+    "",
+    "## Profile Guidance",
+    "",
+    `Profile name: **${report.profile_guidance.name}**`,
+    "",
+    `Endpoint hint: ${report.profile_guidance.endpoint_hint}`,
+    "",
+    `Strict schema hint: ${report.profile_guidance.strict_schema_hint}`,
+    "",
+    "Known risks:",
+    ...report.profile_guidance.known_risks.map((item) => `- ${item}`),
+    "",
+    "Next steps:",
+    ...report.profile_guidance.next_steps.map((item) => `- ${item}`),
     "",
     "## Summary",
     "",

@@ -199,6 +199,8 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
     upstreamUrl,
     "--model",
     "mock-model",
+    "--profile",
+    "relay",
     "--out",
     reportPath,
     "--markdown",
@@ -210,6 +212,9 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(result.stdout, /wrote markdown capability report/);
 
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.profile, "relay");
+  assert.equal(report.profile_guidance.name, "Third-party relay or API gateway");
+  assert.match(report.profile_guidance.strict_schema_hint, /relay preserves DeepSeek strict schema semantics/);
   assert.equal(report.summary.status, "PASS");
   assert.equal(report.summary.passed, 3);
   assert.deepEqual(report.summary.capabilities, {
@@ -231,10 +236,26 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /# DeepSeek CompatKit Capability Report/);
+  assert.match(markdown, /## Profile Guidance/);
+  assert.match(markdown, /Third-party relay or API gateway/);
   assert.match(markdown, /Status: \*\*PASS\*\*/);
   assert.match(markdown, /\| `chat_completions` \| `chat_completions` \| PASS \| 200 \|/);
   assert.match(markdown, /## Recommendations/);
   assert.match(markdown, /No immediate compatibility issues/);
+});
+
+test("probe rejects unknown profiles before network calls", async () => {
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    "http://127.0.0.1:1",
+    "--profile",
+    "mystery",
+  ]);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Unknown probe profile/);
 });
 
 test("inventory reports DeepSeek hints without leaking secret values", () => {

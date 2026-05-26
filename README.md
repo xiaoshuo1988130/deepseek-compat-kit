@@ -72,10 +72,10 @@ Use `--dry-run` first to preview planned changes without writing files. The repo
 Probe an official, relay, or self-hosted OpenAI-compatible endpoint:
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
-`probe` is a small functional compatibility check, not a benchmark or load test. The Markdown report is meant for team handoff or upstream issue triage.
+`probe` is a small functional compatibility check, not a benchmark or load test. Use `--profile official`, `--profile relay`, or `--profile self-hosted` to get endpoint-specific guidance in the JSON and Markdown reports.
 
 Print a no-write OpenCode setup recipe:
 
