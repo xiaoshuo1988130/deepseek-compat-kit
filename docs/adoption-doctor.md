@@ -29,7 +29,13 @@ Print a target-specific recipe:
 npx deepseek-compat-kit doctor --target opencode --print
 ```
 
-Doctor is print-only in the current release. It does not edit OpenCode, Cline, Roo, or other third-party configuration files.
+Include local inventory hints in a single doctor report:
+
+```bash
+npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
+```
+
+Doctor is print-only in the current release. It can include an inventory summary when `--path` is provided, but it does not edit OpenCode, Cline, Roo, or other third-party configuration files.
 
 ## Boundary
 

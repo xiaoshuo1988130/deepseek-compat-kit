@@ -15,7 +15,7 @@ Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
-  doctor --target opencode --print
+  doctor --target opencode [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode]
   lint-schema <schema.json> [--strict] [--base-url <url>]
   diagnose <run.jsonl>
@@ -533,22 +533,14 @@ function inventory(args) {
   const rootArg = argValue(args, "--path") || argValue(args, "-p") || firstPositional(args) || process.cwd();
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
-  const root = path.resolve(rootArg);
-
-  if (!fs.existsSync(root)) {
-    console.error(`Inventory path does not exist: ${root}`);
+  let report;
+  try {
+    report = buildInventoryReport(rootArg);
+  } catch (error) {
+    console.error(error.message);
     return 2;
   }
 
-  const report = createInventoryReport(root);
-  const files = collectInventoryFiles(root);
-  report.summary.files_scanned = files.length;
-
-  for (const filePath of files) {
-    inspectInventoryFile(filePath, root, report);
-  }
-
-  summarizeInventory(report);
   const json = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) {
     fs.writeFileSync(path.resolve(outputPath), json);
@@ -563,6 +555,24 @@ function inventory(args) {
   }
 
   return 0;
+}
+
+function buildInventoryReport(rootArg) {
+  const root = path.resolve(rootArg);
+  if (!fs.existsSync(root)) {
+    throw new Error(`Inventory path does not exist: ${root}`);
+  }
+
+  const report = createInventoryReport(root);
+  const files = collectInventoryFiles(root);
+  report.summary.files_scanned = files.length;
+
+  for (const filePath of files) {
+    inspectInventoryFile(filePath, root, report);
+  }
+
+  summarizeInventory(report);
+  return report;
 }
 
 function createInventoryReport(root) {
@@ -833,8 +843,10 @@ function recipes(args) {
 
 function doctor(args) {
   const target = normalizeRecipeTarget(argValue(args, "--target") || firstPositional(args));
+  const rootArg = argValue(args, "--path") || argValue(args, "-p");
+  const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   if (!target) {
-    console.error("Usage: deepseek-compat-kit doctor --target opencode --print");
+    console.error("Usage: deepseek-compat-kit doctor --target opencode [--path <dir>] [--markdown <doctor.md>] [--print]");
     return 2;
   }
 
@@ -844,13 +856,99 @@ function doctor(args) {
     return 2;
   }
 
-  console.log(`# DeepSeek CompatKit Doctor: ${recipe.title}`);
-  console.log("");
-  console.log("Mode: print-only recipe. No files were scanned or modified.");
-  console.log("Status: configuration recipe only; live end-to-end validation is pending.");
-  console.log("");
-  process.stdout.write(`${recipe.markdown}\n`);
+  let inventoryReport;
+  if (rootArg) {
+    try {
+      inventoryReport = buildInventoryReport(rootArg);
+    } catch (error) {
+      console.error(error.message);
+      return 2;
+    }
+  }
+
+  const markdown = renderDoctorMarkdown({ recipe, inventoryReport });
+  if (markdownPath) {
+    fs.writeFileSync(path.resolve(markdownPath), markdown);
+    console.log(`[deepseek-compat-kit] wrote doctor report: ${markdownPath}`);
+  }
+
+  if (!markdownPath || args.includes("--print")) {
+    process.stdout.write(markdown);
+  }
+
   return 0;
+}
+
+function renderDoctorMarkdown({ recipe, inventoryReport }) {
+  const lines = [
+    `# DeepSeek CompatKit Doctor: ${recipe.title}`,
+    "",
+    "Mode: print-only adoption report. No configuration files were modified.",
+    "Status: configuration recipe only; live end-to-end validation is pending.",
+    "",
+  ];
+
+  if (inventoryReport) {
+    lines.push(
+      "## Local Inventory Summary",
+      "",
+      `Root: \`${inventoryReport.root}\``,
+      `Files scanned: ${inventoryReport.summary.files_scanned}`,
+      `Findings: ${inventoryReport.summary.findings}`,
+      `Warnings: ${inventoryReport.summary.warnings}`,
+      `DeepSeek references: ${inventoryReport.summary.deepseek_references}`,
+      `Base URLs: ${inventoryReport.summary.base_urls}`,
+      `Models: ${inventoryReport.summary.models}`,
+      "",
+    );
+
+    if (inventoryReport.findings.length > 0) {
+      lines.push(
+        "### Inventory Findings",
+        "",
+        "| Level | Code | File | Line | Detail |",
+        "| --- | --- | --- | --- | --- |",
+      );
+      for (const finding of inventoryReport.findings.slice(0, 20)) {
+        const detail = finding.value || finding.variable || finding.message;
+        lines.push(`| ${finding.level} | \`${finding.code}\` | \`${escapeMarkdownTable(finding.file)}\` | ${finding.line} | ${escapeMarkdownTable(detail)} |`);
+      }
+      if (inventoryReport.findings.length > 20) {
+        lines.push(`| INFO | \`DSK_INV_TRUNCATED\` |  |  | ${inventoryReport.findings.length - 20} additional finding(s) omitted from doctor output. Use inventory for the full report. |`);
+      }
+      lines.push("");
+    }
+  } else {
+    lines.push(
+      "## Local Inventory Summary",
+      "",
+      "No local inventory path was provided. Add `--path .` to include local project hints.",
+      "",
+    );
+  }
+
+  lines.push(
+    "## Target Recipe",
+    "",
+    recipe.markdown,
+    "",
+    "## Suggested Next Steps",
+    "",
+    "1. Run `inventory --path .` if this report did not include local inventory.",
+    "2. Run `probe` against the endpoint you plan to use.",
+    "3. Use `compile-schema --dry-run` before changing generated tool schemas.",
+    "4. Keep API keys in environment variables or a local secret store.",
+    "",
+    "## Boundary",
+    "",
+    "- Doctor is a local, print-only adoption helper.",
+    "- It does not edit OpenCode, Cline, Roo, or other third-party configuration files.",
+    "- Secret values are not recorded.",
+    "- Passing doctor output is not proof that a provider endpoint is valid; use `probe` for endpoint checks.",
+    "",
+  );
+
+  return `${lines.join("\n")}\n`;
 }
 
 function normalizeRecipeTarget(value) {

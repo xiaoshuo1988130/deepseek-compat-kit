@@ -81,7 +81,7 @@ Print a no-write OpenCode setup recipe:
 
 ```bash
 npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
-npx deepseek-compat-kit doctor --target opencode --print
+npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit recipes opencode
 ```
 

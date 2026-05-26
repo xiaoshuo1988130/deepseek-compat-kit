@@ -287,10 +287,44 @@ test("recipes lists and prints the OpenCode recipe", () => {
 test("doctor prints a no-write OpenCode prescription", () => {
   const result = spawnSync(process.execPath, [bin, "doctor", "--target", "opencode", "--print"], { encoding: "utf8" });
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /Mode: print-only recipe/);
-  assert.match(result.stdout, /No files were scanned or modified/);
+  assert.match(result.stdout, /Mode: print-only adoption report/);
+  assert.match(result.stdout, /No configuration files were modified/);
   assert.match(result.stdout, /live end-to-end validation is pending/);
+  assert.match(result.stdout, /No local inventory path was provided/);
   assert.match(result.stdout, /probe --endpoint http:\/\/127\.0\.0\.1:8787/);
+});
+
+test("doctor can combine inventory summary with a target recipe", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const doctorPath = path.join(dir, "DeepSeek_Doctor.md");
+  fs.writeFileSync(path.join(dir, ".env"), "DEEPSEEK_API_KEY=sk-doctorsecretvalue1234567890\n");
+  fs.writeFileSync(path.join(dir, "opencode.json"), JSON.stringify({
+    model: "deepseek-chat",
+    baseURL: "http://127.0.0.1:8787/v1",
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "doctor",
+    "--target",
+    "opencode",
+    "--path",
+    dir,
+    "--markdown",
+    doctorPath,
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /wrote doctor report/);
+
+  const report = fs.readFileSync(doctorPath, "utf8");
+  assert.match(report, /# DeepSeek CompatKit Doctor: OpenCode/);
+  assert.match(report, /## Local Inventory Summary/);
+  assert.match(report, /Warnings: 2/);
+  assert.match(report, /deepseek-chat/);
+  assert.match(report, /## Target Recipe/);
+  assert.match(report, /OpenCode \+ DeepSeek CompatKit Recipe/);
+  assert.doesNotMatch(report, /doctorsecretvalue/);
 });
 
 test("diagnose detects dropped reasoning_content", () => {
