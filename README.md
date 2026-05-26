@@ -60,6 +60,31 @@ WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool
 
 ## Commands
 
+Compile a Zod/Pydantic/generated JSON Schema into a DeepSeek strict-mode compatible schema:
+
+```bash
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json
+```
+
+The report includes removed constraints, a `system_prompt_appendix`, and a `post_validation_plan` for checks that must move back into application code.
+
+Probe an official, relay, or self-hosted OpenAI-compatible endpoint:
+
+```bash
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json
+```
+
+`probe` is a small functional compatibility check, not a benchmark or load test.
+
+Print a no-write OpenCode setup recipe:
+
+```bash
+npx deepseek-compat-kit doctor --target opencode --print
+npx deepseek-compat-kit recipes opencode
+```
+
+The doctor path is intentionally conservative: it prints a configuration prescription and does not scan or modify local OpenCode files.
+
 The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
 
 ```bash
@@ -93,6 +118,8 @@ npm run demo:mock
 ## What It Solves First
 
 - DeepSeek V4 `reasoning_content` round-trip failures in multi-turn tool calling.
+- Generated Zod/Pydantic/JSON Schema output that needs to be compiled into DeepSeek strict mode.
+- Official, relay, or self-hosted endpoints that need a small Agent capability report before adoption.
 - Strict-mode schema incompatibilities such as unsupported fields, missing `required`, missing `additionalProperties: false`, or using the wrong base URL.
 - Safe, shareable replay fixtures for GitHub issues.
 - A minimal local proxy for temporary migration relief while upstream frameworks land proper fixes.
@@ -122,8 +149,10 @@ Initial proxy scope:
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
+- [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.1 release notes](docs/releases/v0.1.1.md)
+- [v0.1.2 release notes](docs/releases/v0.1.2.md)
 
 ## Examples & Integrations
 

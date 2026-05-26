@@ -12,6 +12,10 @@ const help = `DeepSeek CompatKit
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
+  compile-schema -i <schema.json> -o <deepseek.schema.json> [--report <report.json>]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--profile official|openai]
+  doctor --target opencode --print
+  recipes [opencode]
   lint-schema <schema.json> [--strict] [--base-url <url>]
   diagnose <run.jsonl>
   replay <fixture.jsonl>
@@ -36,6 +40,10 @@ function main() {
   }
 
   if (command === "lint-schema") return lintSchema(args);
+  if (command === "compile-schema") return compileSchema(args);
+  if (command === "probe") return probeEndpoint(args);
+  if (command === "doctor") return doctor(args);
+  if (command === "recipes") return recipes(args);
   if (command === "diagnose") return diagnose(args);
   if (command === "replay") return diagnose(args);
   if (command === "sanitize") return sanitize(args);
@@ -76,6 +84,464 @@ function readJsonl(filePath) {
 function argValue(args, name) {
   const index = args.indexOf(name);
   return index === -1 ? undefined : args[index + 1];
+}
+
+function firstPositional(args) {
+  return args.find((arg, index) => !arg.startsWith("-") && !args[index - 1]?.startsWith("--"));
+}
+
+function compileSchema(args) {
+  const inputPath = argValue(args, "-i") || argValue(args, "--input") || args.find((arg) => !arg.startsWith("-"));
+  const outputPath = argValue(args, "-o") || argValue(args, "--out");
+  const reportPath = argValue(args, "--report");
+
+  if (!inputPath) {
+    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>]");
+    return 2;
+  }
+
+  const document = readJson(inputPath);
+  const { document: compiled, report } = compileDeepSeekSchema(document);
+  const compiledText = `${JSON.stringify(compiled, null, 2)}\n`;
+
+  if (outputPath) {
+    fs.writeFileSync(path.resolve(outputPath), compiledText);
+    console.log(`[deepseek-compat-kit] wrote DeepSeek strict schema: ${outputPath}`);
+  } else {
+    process.stdout.write(compiledText);
+  }
+
+  if (reportPath) {
+    fs.writeFileSync(path.resolve(reportPath), `${JSON.stringify(report, null, 2)}\n`);
+    console.log(`[deepseek-compat-kit] wrote compile report: ${reportPath}`);
+  } else if (report.summary.removed_constraints > 0 || report.summary.required_added > 0 || report.summary.additional_properties_fixed > 0) {
+    printCompileReport(report);
+  }
+
+  return 0;
+}
+
+function compileDeepSeekSchema(document) {
+  const compiled = cloneJson(document);
+  const schema = extractSchema(compiled);
+  const report = createCompileReport();
+  compileSchemaNode(schema, "$", report);
+  finalizeCompileReport(report);
+  return { document: compiled, report };
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function createCompileReport() {
+  return {
+    summary: {
+      removed_constraints: 0,
+      required_added: 0,
+      additional_properties_fixed: 0,
+    },
+    removed_constraints: [],
+    required_added: [],
+    additional_properties_fixed: [],
+    system_prompt_appendix: "",
+    post_validation_plan: [],
+  };
+}
+
+function compileSchemaNode(node, currentPath, report) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return;
+
+  const unsupported = [
+    "minLength",
+    "maxLength",
+    "minItems",
+    "maxItems",
+  ];
+
+  for (const key of unsupported) {
+    if (Object.hasOwn(node, key)) {
+      const value = node[key];
+      delete node[key];
+      report.summary.removed_constraints += 1;
+      report.removed_constraints.push({
+        path: `${currentPath}.${key}`,
+        keyword: key,
+        value,
+        prompt_instruction: constraintPromptInstruction(currentPath, key, value),
+      });
+    }
+  }
+
+  const isObject = node.type === "object" || Boolean(node.properties);
+  if (isObject) {
+    const properties = node.properties && typeof node.properties === "object" ? Object.keys(node.properties) : [];
+    const required = Array.isArray(node.required) ? [...node.required] : [];
+    const added = [];
+
+    for (const property of properties) {
+      if (!required.includes(property)) {
+        required.push(property);
+        added.push(property);
+      }
+    }
+
+    if (added.length > 0 || properties.length > 0) {
+      node.required = required;
+    }
+
+    if (added.length > 0) {
+      report.summary.required_added += added.length;
+      report.required_added.push({ path: `${currentPath}.required`, properties: added });
+    }
+
+    if (node.additionalProperties !== false) {
+      node.additionalProperties = false;
+      report.summary.additional_properties_fixed += 1;
+      report.additional_properties_fixed.push({ path: `${currentPath}.additionalProperties`, value: false });
+    }
+  }
+
+  if (node.properties && typeof node.properties === "object") {
+    for (const [key, value] of Object.entries(node.properties)) {
+      compileSchemaNode(value, `${currentPath}.properties.${key}`, report);
+    }
+  }
+
+  if (node.items) compileSchemaNode(node.items, `${currentPath}.items`, report);
+  if (Array.isArray(node.anyOf)) node.anyOf.forEach((child, index) => compileSchemaNode(child, `${currentPath}.anyOf[${index}]`, report));
+  if (Array.isArray(node.oneOf)) node.oneOf.forEach((child, index) => compileSchemaNode(child, `${currentPath}.oneOf[${index}]`, report));
+  if (Array.isArray(node.allOf)) node.allOf.forEach((child, index) => compileSchemaNode(child, `${currentPath}.allOf[${index}]`, report));
+}
+
+function constraintPromptInstruction(currentPath, keyword, value) {
+  const target = currentPath.replace(/^\$\./, "");
+  if (keyword === "minLength") return `${target} must have a minimum string length of ${value}.`;
+  if (keyword === "maxLength") return `${target} must have a maximum string length of ${value}.`;
+  if (keyword === "minItems") return `${target} must contain at least ${value} item(s).`;
+  if (keyword === "maxItems") return `${target} must contain at most ${value} item(s).`;
+  return `${target} must satisfy ${keyword}: ${JSON.stringify(value)}.`;
+}
+
+function finalizeCompileReport(report) {
+  report.post_validation_plan = report.removed_constraints.map((item) => item.prompt_instruction);
+  if (report.post_validation_plan.length === 0) {
+    report.system_prompt_appendix = "";
+    return;
+  }
+
+  report.system_prompt_appendix = [
+    "Additional validation requirements that were removed from the DeepSeek strict schema:",
+    ...report.post_validation_plan.map((instruction) => `- ${instruction}`),
+    "Validate these requirements in application code after the model returns structured output.",
+  ].join("\n");
+}
+
+function printCompileReport(report) {
+  console.log("[deepseek-compat-kit] compile report");
+  console.log(`removed_constraints=${report.summary.removed_constraints}`);
+  console.log(`required_added=${report.summary.required_added}`);
+  console.log(`additional_properties_fixed=${report.summary.additional_properties_fixed}`);
+  if (report.system_prompt_appendix) {
+    console.log("system_prompt_appendix:");
+    console.log(report.system_prompt_appendix);
+  }
+}
+
+async function probeEndpoint(args) {
+  const endpoint = argValue(args, "--endpoint") || argValue(args, "--base-url");
+  const model = argValue(args, "--model") || "deepseek-chat";
+  const profile = argValue(args, "--profile") || "openai";
+  const outputPath = argValue(args, "--out");
+
+  if (!endpoint) {
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--profile official|openai]");
+    return 2;
+  }
+
+  const baseUrl = normalizeBaseUrl(endpoint);
+  const report = {
+    version: "0.1",
+    generated_at: new Date().toISOString(),
+    endpoint: baseUrl,
+    profile,
+    model,
+    scope: "functional compatibility probe, not a benchmark",
+    checks: [],
+    summary: {
+      status: "UNKNOWN",
+      passed: 0,
+      warned: 0,
+      failed: 0,
+    },
+  };
+
+  report.checks.push(await runProbeCheck({
+    name: "chat_completions",
+    description: "POST /chat/completions accepts a minimal non-streaming request.",
+    request: buildProbeRequest({ model, stream: false }),
+    baseUrl,
+  }));
+
+  report.checks.push(await runProbeCheck({
+    name: "streaming",
+    description: "POST /chat/completions accepts stream: true and returns an event-stream-like response.",
+    request: buildProbeRequest({ model, stream: true }),
+    baseUrl,
+    expectStream: true,
+  }));
+
+  report.checks.push(await runProbeCheck({
+    name: "strict_schema_request",
+    description: "Endpoint accepts a minimal strict tool schema request.",
+    request: buildStrictSchemaProbeRequest(model),
+    baseUrl,
+  }));
+
+  summarizeProbe(report);
+  const text = `${JSON.stringify(report, null, 2)}\n`;
+  if (outputPath) {
+    fs.writeFileSync(path.resolve(outputPath), text);
+    console.log(`[deepseek-compat-kit] wrote capability report: ${outputPath}`);
+  } else {
+    process.stdout.write(text);
+  }
+
+  return report.summary.failed > 0 ? 1 : 0;
+}
+
+function buildProbeRequest({ model, stream }) {
+  return {
+    model,
+    messages: [
+      { role: "user", content: "Reply with exactly: ok" },
+    ],
+    stream,
+    max_tokens: 8,
+  };
+}
+
+function buildStrictSchemaProbeRequest(model) {
+  return {
+    model,
+    messages: [
+      { role: "user", content: "Return a compact search query for DeepSeek compatibility testing." },
+    ],
+    tools: [{
+      type: "function",
+      function: {
+        name: "record_query",
+        description: "Record a short search query.",
+        strict: true,
+        parameters: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "A short query.",
+            },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    }],
+    tool_choice: {
+      type: "function",
+      function: { name: "record_query" },
+    },
+    max_tokens: 64,
+  };
+}
+
+async function runProbeCheck({ name, description, request, baseUrl, expectStream = false }) {
+  const started = Date.now();
+  const check = {
+    name,
+    description,
+    status: "UNKNOWN",
+    http_status: null,
+    duration_ms: null,
+    notes: [],
+  };
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: buildProbeHeaders(request),
+      body: JSON.stringify(request),
+    });
+    check.http_status = response.status;
+    check.duration_ms = Date.now() - started;
+    const contentType = response.headers.get("content-type") || "";
+
+    if (!response.ok) {
+      check.status = response.status >= 500 ? "FAIL" : "WARN";
+      check.notes.push(await summarizeProbeError(response));
+      return check;
+    }
+
+    if (expectStream || request.stream) {
+      check.status = contentType.includes("text/event-stream") ? "PASS" : "WARN";
+      if (!contentType.includes("text/event-stream")) {
+        check.notes.push(`Expected text/event-stream, got ${contentType || "missing content-type"}.`);
+      }
+      await drainProbeResponse(response);
+      return check;
+    }
+
+    const payload = await response.json();
+    if (Array.isArray(payload?.choices)) {
+      check.status = "PASS";
+      check.notes.push(`choices=${payload.choices.length}`);
+    } else {
+      check.status = "WARN";
+      check.notes.push("Response did not contain a choices array.");
+    }
+    return check;
+  } catch (error) {
+    check.duration_ms = Date.now() - started;
+    check.status = "FAIL";
+    check.notes.push(error.message);
+    return check;
+  }
+}
+
+function buildProbeHeaders(request) {
+  const headers = {
+    "content-type": "application/json",
+    "accept": request.stream ? "text/event-stream" : "application/json",
+    "user-agent": "deepseek-compat-kit/probe",
+  };
+  if (process.env.DEEPSEEK_API_KEY) headers.authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
+  return headers;
+}
+
+async function summarizeProbeError(response) {
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  const trimmed = text.trim().slice(0, 500);
+  return `HTTP ${response.status} ${response.statusText}; ${contentType || "no content-type"}; ${trimmed || "empty body"}`;
+}
+
+async function drainProbeResponse(response) {
+  for await (const _chunk of response.body) {
+    // Drain the response so the remote endpoint can close cleanly.
+  }
+}
+
+function summarizeProbe(report) {
+  for (const check of report.checks) {
+    if (check.status === "PASS") report.summary.passed += 1;
+    else if (check.status === "WARN") report.summary.warned += 1;
+    else report.summary.failed += 1;
+  }
+
+  if (report.summary.failed > 0) report.summary.status = "FAIL";
+  else if (report.summary.warned > 0) report.summary.status = "WARN";
+  else report.summary.status = "PASS";
+}
+
+function recipes(args) {
+  const target = normalizeRecipeTarget(argValue(args, "--target") || firstPositional(args));
+  if (!target) {
+    console.log("[deepseek-compat-kit] available recipes:");
+    console.log("- opencode: print-only DeepSeek/OpenAI-compatible baseURL recipe");
+    return 0;
+  }
+
+  const recipe = recipeFor(target);
+  if (!recipe) {
+    console.error(`Unknown recipe "${target}". Available recipes: opencode`);
+    return 2;
+  }
+
+  process.stdout.write(`${recipe.markdown}\n`);
+  return 0;
+}
+
+function doctor(args) {
+  const target = normalizeRecipeTarget(argValue(args, "--target") || firstPositional(args));
+  if (!target) {
+    console.error("Usage: deepseek-compat-kit doctor --target opencode --print");
+    return 2;
+  }
+
+  const recipe = recipeFor(target);
+  if (!recipe) {
+    console.error(`Unknown doctor target "${target}". Available targets: opencode`);
+    return 2;
+  }
+
+  console.log(`# DeepSeek CompatKit Doctor: ${recipe.title}`);
+  console.log("");
+  console.log("Mode: print-only recipe. No files were scanned or modified.");
+  console.log("Status: configuration recipe only; live end-to-end validation is pending.");
+  console.log("");
+  process.stdout.write(`${recipe.markdown}\n`);
+  return 0;
+}
+
+function normalizeRecipeTarget(value) {
+  if (!value) return "";
+  const normalized = String(value).trim().toLowerCase();
+  if (["opencode", "open-code", "open_code"].includes(normalized)) return "opencode";
+  return normalized;
+}
+
+function recipeFor(target) {
+  if (target === "opencode") return opencodeRecipe();
+  return undefined;
+}
+
+function opencodeRecipe() {
+  const markdown = [
+    "# OpenCode + DeepSeek CompatKit Recipe",
+    "",
+    "Use this when OpenCode or an OpenAI-compatible provider entry needs a local DeepSeek compatibility layer.",
+    "",
+    "Safety boundary:",
+    "- This recipe is print-only.",
+    "- It does not edit OpenCode configuration files.",
+    "- It does not claim live OpenCode end-to-end validation yet.",
+    "",
+    "1. Start the local compatibility proxy:",
+    "",
+    "```bash",
+    "DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787",
+    "```",
+    "",
+    "2. In the OpenCode provider entry that supports an OpenAI-compatible base URL, set the base URL to:",
+    "",
+    "```text",
+    "http://127.0.0.1:8787/v1",
+    "```",
+    "",
+    "Keep the upstream API key in your environment or existing provider secret store. Do not paste API keys into issue reports.",
+    "",
+    "3. Probe the path before using it for a real task:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json",
+    "```",
+    "",
+    "4. If a tool schema fails under strict mode, compile and inspect it:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json",
+    "npx deepseek-compat-kit lint-schema ./deepseek.tools.schema.json --strict --base-url https://api.deepseek.com/beta",
+    "```",
+    "",
+    "Troubleshooting:",
+    "- If OpenCode reports a provider connection error, test the proxy health endpoint: `curl http://127.0.0.1:8787/health`.",
+    "- If the probe report warns on streaming, use non-streaming mode until the endpoint is verified.",
+    "- If the proxy reports `DSK_REASONING_002`, route the whole conversation through the proxy from turn one.",
+  ].join("\n");
+
+  return {
+    title: "OpenCode",
+    markdown,
+  };
 }
 
 function lintSchema(args) {
@@ -577,9 +1043,12 @@ function error(code, currentPath, message) {
   return { level: "ERROR", code, path: currentPath, message };
 }
 
-try {
-  process.exitCode = main();
-} catch (error) {
-  console.error(`[deepseek-compat-kit] ${error.message}`);
-  process.exitCode = 2;
-}
+Promise.resolve()
+  .then(() => main())
+  .then((code) => {
+    if (typeof code === "number") process.exitCode = code;
+  })
+  .catch((error) => {
+    console.error(`[deepseek-compat-kit] ${error.message}`);
+    process.exitCode = 2;
+  });

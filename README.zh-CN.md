@@ -60,6 +60,31 @@ WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool
 
 ## 命令
 
+把 Zod/Pydantic 等生成的 JSON Schema 编译为 DeepSeek strict mode 兼容 schema：
+
+```bash
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json
+```
+
+报告会包含被移除的约束、`system_prompt_appendix` 和需要回到应用层执行的 `post_validation_plan`。
+
+探测官方、中转商或自托管 OpenAI-compatible endpoint 的 Agent 能力：
+
+```bash
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --out ./deepseek-capability-report.json
+```
+
+`probe` 是小请求量的功能兼容性检查，不是压测或模型质量评测。
+
+打印一个只读、不改配置的 OpenCode 接入处方：
+
+```bash
+npx deepseek-compat-kit doctor --target opencode --print
+npx deepseek-compat-kit recipes opencode
+```
+
+doctor 路径刻意保持保守：只输出配置建议，不扫描、不修改本地 OpenCode 文件。
+
 proxy 默认转发到 `https://api.deepseek.com`。如果要测试或接自托管网关：
 
 ```bash
@@ -93,6 +118,8 @@ npm run demo:mock
 ## 第一阶段解决什么
 
 - DeepSeek V4 多轮 tool calling 中的 `reasoning_content` 回传问题。
+- 将 Zod/Pydantic/JSON Schema 生成物编译为 DeepSeek strict mode 兼容 schema。
+- 接入官方、中转商或自托管 endpoint 前，生成小型 Agent 能力报告。
 - Strict mode schema 兼容问题，例如不支持字段、缺失 `required`、缺失 `additionalProperties: false`、base URL 不正确。
 - 可安全提交到 GitHub issue 的脱敏 replay fixture。
 - 在上游框架合入正式修复之前，用最小 local proxy 临时止血。
@@ -122,8 +149,10 @@ npm run demo:mock
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
+- [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.1 release notes](docs/releases/v0.1.1.md)
+- [v0.1.2 release notes](docs/releases/v0.1.2.md)
 
 ## 示例与集成
 

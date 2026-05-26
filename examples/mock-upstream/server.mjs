@@ -18,6 +18,56 @@ const server = http.createServer(async (request, response) => {
   const body = await readJson(request);
   requests.push(body);
 
+  if (body.stream) {
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.write(`data: ${JSON.stringify({
+      choices: [{
+        index: 0,
+        delta: { content: "ok" },
+        finish_reason: null,
+      }],
+    })}\n\n`);
+    response.write("data: [DONE]\n\n");
+    response.end();
+    return;
+  }
+
+  if (Array.isArray(body.tools)) {
+    writeJson(response, 200, {
+      id: "mock-strict-schema",
+      object: "chat.completion",
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_mock_query",
+            type: "function",
+            function: {
+              name: "record_query",
+              arguments: "{\"query\":\"compatibility\"}",
+            },
+          }],
+        },
+        finish_reason: "tool_calls",
+      }],
+    });
+    return;
+  }
+
+  if (body.messages?.[0]?.content === "Reply with exactly: ok") {
+    writeJson(response, 200, {
+      id: "mock-probe-chat",
+      object: "chat.completion",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "ok" },
+        finish_reason: "stop",
+      }],
+    });
+    return;
+  }
+
   if (requests.length === 1) {
     writeJson(response, 200, {
       id: "mock-turn-1",
@@ -95,4 +145,3 @@ function writeJson(response, status, payload) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(payload, null, 2));
 }
-

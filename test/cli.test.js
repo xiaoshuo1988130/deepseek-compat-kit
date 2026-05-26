@@ -58,6 +58,146 @@ test("lint-schema accepts DeepSeek-supported strict schema constraints", () => {
   assert.match(result.stdout, /schema ok/);
 });
 
+test("compile-schema writes DeepSeek strict schema and loss report", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const schemaPath = path.join(dir, "schema.json");
+  const outPath = path.join(dir, "deepseek.schema.json");
+  const reportPath = path.join(dir, "report.json");
+  fs.writeFileSync(schemaPath, JSON.stringify({
+    type: "function",
+    function: {
+      name: "search",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", minLength: 2, maxLength: 80 },
+          tags: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+              },
+            },
+          },
+        },
+        required: ["query"],
+      },
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "compile-schema",
+    "-i",
+    schemaPath,
+    "-o",
+    outPath,
+    "--report",
+    reportPath,
+  ], { encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /wrote DeepSeek strict schema/);
+
+  const compiled = JSON.parse(fs.readFileSync(outPath, "utf8"));
+  const parameters = compiled.function.parameters;
+  assert.deepEqual(parameters.required, ["query", "tags"]);
+  assert.equal(parameters.additionalProperties, false);
+  assert.equal(parameters.properties.query.minLength, undefined);
+  assert.equal(parameters.properties.query.maxLength, undefined);
+  assert.equal(parameters.properties.tags.minItems, undefined);
+  assert.equal(parameters.properties.tags.maxItems, undefined);
+  assert.deepEqual(parameters.properties.tags.items.required, ["name"]);
+  assert.equal(parameters.properties.tags.items.additionalProperties, false);
+
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.summary.removed_constraints, 4);
+  assert.equal(report.summary.required_added, 2);
+  assert.equal(report.summary.additional_properties_fixed, 2);
+  assert.match(report.system_prompt_appendix, /minimum string length of 2/);
+  assert.match(report.system_prompt_appendix, /at most 3 item/);
+});
+
+test("probe writes endpoint capability report against mock upstream", async (t) => {
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      if (body.stream) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "ok" } }] })}\n\n`);
+        response.write("data: [DONE]\n\n");
+        response.end();
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "capability-report.json");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--model",
+    "mock-model",
+    "--out",
+    reportPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /wrote capability report/);
+
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.summary.status, "PASS");
+  assert.equal(report.summary.passed, 3);
+  assert.deepEqual(report.checks.map((check) => check.name), [
+    "chat_completions",
+    "streaming",
+    "strict_schema_request",
+  ]);
+});
+
+test("recipes lists and prints the OpenCode recipe", () => {
+  const list = spawnSync(process.execPath, [bin, "recipes"], { encoding: "utf8" });
+  assert.equal(list.status, 0);
+  assert.match(list.stdout, /opencode/);
+
+  const recipe = spawnSync(process.execPath, [bin, "recipes", "opencode"], { encoding: "utf8" });
+  assert.equal(recipe.status, 0);
+  assert.match(recipe.stdout, /OpenCode \+ DeepSeek CompatKit Recipe/);
+  assert.match(recipe.stdout, /http:\/\/127\.0\.0\.1:8787\/v1/);
+  assert.match(recipe.stdout, /compile-schema/);
+  assert.match(recipe.stdout, /does not edit OpenCode configuration files/);
+});
+
+test("doctor prints a no-write OpenCode prescription", () => {
+  const result = spawnSync(process.execPath, [bin, "doctor", "--target", "opencode", "--print"], { encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Mode: print-only recipe/);
+  assert.match(result.stdout, /No files were scanned or modified/);
+  assert.match(result.stdout, /live end-to-end validation is pending/);
+  assert.match(result.stdout, /probe --endpoint http:\/\/127\.0\.0\.1:8787/);
+});
+
 test("diagnose detects dropped reasoning_content", () => {
   const result = spawnSync(process.execPath, [bin, "diagnose", "fixtures/tool-calls/reasoning-content-lost.jsonl"], { encoding: "utf8" });
   assert.equal(result.status, 1);
@@ -250,6 +390,26 @@ function listen(server) {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       resolve(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+function runNode(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (status) => {
+      resolve({ status, stdout, stderr });
     });
   });
 }

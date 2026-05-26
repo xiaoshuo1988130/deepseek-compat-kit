@@ -1,6 +1,6 @@
 {
   "name": "deepseek-compat-kit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Compatibility and diagnostics for DeepSeek V4 tool-calling agents.",
   "type": "module",
   "homepage": "https://github.com/xiaoshuo1988130/deepseek-compat-kit#readme",
