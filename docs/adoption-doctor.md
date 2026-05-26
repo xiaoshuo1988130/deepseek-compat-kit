@@ -33,6 +33,14 @@ These recommendations do not change files. They are routing hints for the next d
 
 ## Doctor
 
+Generate one combined print-only report from detected local targets:
+
+```bash
+npx deepseek-compat-kit doctor --target auto --path . --markdown ./DeepSeek_Doctor.md
+```
+
+`auto` requires an explicit `--path`. It uses inventory heuristics to select matching recipes and still does not modify files.
+
 Print a target-specific recipe:
 
 ```bash
@@ -46,6 +54,7 @@ npx deepseek-compat-kit doctor --target langchain-js --print
 Include local inventory hints in a single doctor report:
 
 ```bash
+npx deepseek-compat-kit doctor --target auto --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target cline --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target roo-code --path . --markdown ./DeepSeek_Doctor.md

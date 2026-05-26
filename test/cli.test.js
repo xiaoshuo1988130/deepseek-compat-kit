@@ -397,6 +397,51 @@ test("doctor prints a no-write OpenCode prescription", () => {
   assert.match(result.stdout, /probe --endpoint http:\/\/127\.0\.0\.1:8787/);
 });
 
+test("doctor auto combines detected target recipes from inventory", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const doctorPath = path.join(dir, "DeepSeek_Doctor.md");
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({
+    dependencies: {
+      openai: "^4.0.0",
+      "@langchain/openai": "^0.6.0",
+    },
+  }, null, 2));
+  fs.writeFileSync(path.join(dir, "agent.ts"), [
+    "import OpenAI from 'openai';",
+    "import { ChatOpenAI } from '@langchain/openai';",
+    "const baseURL = 'http://127.0.0.1:8787/v1';",
+    "const model = 'deepseek-chat';",
+  ].join("\n"));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "doctor",
+    "--target",
+    "auto",
+    "--path",
+    dir,
+    "--markdown",
+    doctorPath,
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /wrote doctor report/);
+
+  const report = fs.readFileSync(doctorPath, "utf8");
+  assert.match(report, /# DeepSeek CompatKit Doctor: Auto/);
+  assert.match(report, /Detected targets: `langchain-js`, `openai-js`/);
+  assert.match(report, /## Target Recipes/);
+  assert.match(report, /OpenAI JS SDK \+ DeepSeek CompatKit Recipe/);
+  assert.match(report, /LangChain JS \+ DeepSeek CompatKit Recipe/);
+  assert.match(report, /No configuration files were modified/);
+});
+
+test("doctor auto requires an explicit local path", () => {
+  const result = spawnSync(process.execPath, [bin, "doctor", "--target", "auto"], { encoding: "utf8" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /doctor --target auto --path/);
+});
+
 test("doctor can combine inventory summary with a target recipe", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
   const doctorPath = path.join(dir, "DeepSeek_Doctor.md");

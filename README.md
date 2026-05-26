@@ -81,6 +81,7 @@ Print a no-write OpenCode setup recipe:
 
 ```bash
 npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
+npx deepseek-compat-kit doctor --target auto --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target cline --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target roo-code --path . --markdown ./DeepSeek_Doctor.md
@@ -93,7 +94,7 @@ npx deepseek-compat-kit recipes openai-js
 npx deepseek-compat-kit recipes langchain-js
 ```
 
-The inventory and doctor paths are intentionally conservative: they scan only the explicit local path, redact secret values, detect likely adoption targets, print configuration prescriptions, and do not modify local tool files.
+The inventory and doctor paths are intentionally conservative: they scan only the explicit local path, redact secret values, detect likely adoption targets, print configuration prescriptions, and do not modify local tool files. Use `doctor --target auto --path .` to generate one combined print-only adoption report from detected targets.
 
 The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
 

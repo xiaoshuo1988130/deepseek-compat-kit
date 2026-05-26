@@ -15,7 +15,7 @@ Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
-  doctor --target opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
+  doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
   lint-schema <schema.json> [--strict] [--base-url <url>]
   diagnose <run.jsonl>
@@ -1097,13 +1097,43 @@ function doctor(args) {
   const rootArg = argValue(args, "--path") || argValue(args, "-p");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   if (!target) {
-    console.error("Usage: deepseek-compat-kit doctor --target opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]");
+    console.error("Usage: deepseek-compat-kit doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]");
     return 2;
+  }
+
+  if (target === "auto") {
+    if (!rootArg) {
+      console.error("Usage: deepseek-compat-kit doctor --target auto --path <dir> [--markdown <doctor.md>] [--print]");
+      return 2;
+    }
+
+    let inventoryReport;
+    try {
+      inventoryReport = buildInventoryReport(rootArg);
+    } catch (error) {
+      console.error(error.message);
+      return 2;
+    }
+
+    const recipes = inventoryReport.summary.detected_targets
+      .map((detectedTarget) => recipeFor(detectedTarget))
+      .filter(Boolean);
+    const markdown = renderAutoDoctorMarkdown({ inventoryReport, recipes });
+    if (markdownPath) {
+      fs.writeFileSync(path.resolve(markdownPath), markdown);
+      console.log(`[deepseek-compat-kit] wrote doctor report: ${markdownPath}`);
+    }
+
+    if (!markdownPath || args.includes("--print")) {
+      process.stdout.write(markdown);
+    }
+
+    return 0;
   }
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown doctor target "${target}". Available targets: opencode, cline, roo-code, openai-js, langchain-js`);
+    console.error(`Unknown doctor target "${target}". Available targets: auto, opencode, cline, roo-code, openai-js, langchain-js`);
     return 2;
   }
 
@@ -1210,9 +1240,86 @@ function renderDoctorMarkdown({ recipe, inventoryReport }) {
   return `${lines.join("\n")}\n`;
 }
 
+function renderAutoDoctorMarkdown({ inventoryReport, recipes }) {
+  const lines = [
+    "# DeepSeek CompatKit Doctor: Auto",
+    "",
+    "Mode: print-only auto adoption report. No configuration files were modified.",
+    "Status: target recipes are selected from local inventory heuristics; live end-to-end validation is pending.",
+    "",
+    "## Local Inventory Summary",
+    "",
+    `Root: \`${inventoryReport.root}\``,
+    `Files scanned: ${inventoryReport.summary.files_scanned}`,
+    `Findings: ${inventoryReport.summary.findings}`,
+    `Warnings: ${inventoryReport.summary.warnings}`,
+    `DeepSeek references: ${inventoryReport.summary.deepseek_references}`,
+    `Base URLs: ${inventoryReport.summary.base_urls}`,
+    `Models: ${inventoryReport.summary.models}`,
+    `Detected targets: ${inventoryReport.summary.detected_targets.length > 0 ? inventoryReport.summary.detected_targets.map((item) => `\`${item}\``).join(", ") : "none"}`,
+    "",
+    "### Inventory Recommendations",
+    "",
+    ...renderInventoryRecommendations(inventoryReport),
+    "",
+  ];
+
+  if (inventoryReport.findings.length > 0) {
+    lines.push(
+      "### Inventory Findings",
+      "",
+      "| Level | Code | File | Line | Detail |",
+      "| --- | --- | --- | --- | --- |",
+    );
+    for (const finding of inventoryReport.findings.slice(0, 20)) {
+      const detail = finding.value || finding.variable || finding.message;
+      lines.push(`| ${finding.level} | \`${finding.code}\` | \`${escapeMarkdownTable(finding.file)}\` | ${finding.line} | ${escapeMarkdownTable(detail)} |`);
+    }
+    if (inventoryReport.findings.length > 20) {
+      lines.push(`| INFO | \`DSK_INV_TRUNCATED\` |  |  | ${inventoryReport.findings.length - 20} additional finding(s) omitted from doctor output. Use inventory for the full report. |`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Target Recipes", "");
+  if (recipes.length === 0) {
+    lines.push(
+      "No specific recipe target was detected.",
+      "",
+      "Run `npx deepseek-compat-kit recipes` to list available recipes, or run a target-specific doctor command manually.",
+      "",
+    );
+  } else {
+    for (const recipe of recipes) {
+      lines.push(recipe.markdown, "");
+    }
+  }
+
+  lines.push(
+    "## Suggested Next Steps",
+    "",
+    "1. Review the detected targets and ignore recipes that do not apply.",
+    "2. Run `probe` against the endpoint you plan to use.",
+    "3. Use `compile-schema --dry-run` before changing generated tool schemas.",
+    "4. Keep API keys in environment variables or a local secret store.",
+    "",
+    "## Boundary",
+    "",
+    "- Auto doctor is a local, print-only adoption helper.",
+    "- It does not edit OpenCode, Cline, Roo, SDK, or framework configuration files.",
+    "- It selects recipes from heuristic inventory findings only.",
+    "- Secret values are not recorded.",
+    "- Passing doctor output is not proof that a provider endpoint is valid; use `probe` for endpoint checks.",
+    "",
+  );
+
+  return `${lines.join("\n")}\n`;
+}
+
 function normalizeRecipeTarget(value) {
   if (!value) return "";
   const normalized = String(value).trim().toLowerCase();
+  if (["auto", "detect", "detected"].includes(normalized)) return "auto";
   if (["opencode", "open-code", "open_code"].includes(normalized)) return "opencode";
   if (["cline", "cline-bot", "clinebot"].includes(normalized)) return "cline";
   if (["roo-code", "roocode", "roo", "roo_code"].includes(normalized)) return "roo-code";

@@ -81,6 +81,7 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 
 ```bash
 npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
+npx deepseek-compat-kit doctor --target auto --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target cline --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target roo-code --path . --markdown ./DeepSeek_Doctor.md
@@ -93,7 +94,7 @@ npx deepseek-compat-kit recipes openai-js
 npx deepseek-compat-kit recipes langchain-js
 ```
 
-inventory 和 doctor 路径刻意保持保守：只扫描显式指定的本地路径，脱敏 secret 值，识别可能的接入目标，输出配置建议，不修改本地工具文件。
+inventory 和 doctor 路径刻意保持保守：只扫描显式指定的本地路径，脱敏 secret 值，识别可能的接入目标，输出配置建议，不修改本地工具文件。使用 `doctor --target auto --path .` 可以基于检测到的目标生成一份合并的只读接入报告。
 
 proxy 默认转发到 `https://api.deepseek.com`。如果要测试或接自托管网关：
 
