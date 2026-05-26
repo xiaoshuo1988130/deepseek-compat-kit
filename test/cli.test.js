@@ -248,6 +248,9 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.equal(result.status, 0);
   assert.match(result.stdout, /wrote capability report/);
   assert.match(result.stdout, /wrote markdown capability report/);
+  assert.match(result.stdout, /probe summary: PASS \(4 passed, 0 warned, 0 failed\)/);
+  assert.match(result.stdout, /capabilities: chat_completions=PASS, streaming=PASS, multi_turn_tool_messages=PASS, strict_schema=PASS/);
+  assert.match(result.stdout, /no immediate capability issues detected/);
 
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   assert.equal(report.profile, "relay");
@@ -471,6 +474,10 @@ test("probe warns when strict schema response lacks tool calls", async (t) => {
   ]);
 
   assert.equal(result.status, 0);
+  assert.match(result.stdout, /probe summary: WARN \(3 passed, 1 warned, 0 failed\)/);
+  assert.match(result.stdout, /capabilities: chat_completions=PASS, streaming=PASS, multi_turn_tool_messages=PASS, strict_schema=WARN/);
+  assert.match(result.stdout, /attention:/);
+  assert.match(result.stdout, /strict_schema: WARN/);
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   assert.equal(report.summary.status, "WARN");
   assert.equal(report.summary.warned, 1);
@@ -552,6 +559,10 @@ test("probe compares against a baseline report and can fail on regression", asyn
   ]);
 
   assert.equal(result.status, 0);
+  assert.match(result.stdout, /probe summary: WARN \(0 passed, 1 warned, 0 failed\)/);
+  assert.match(result.stdout, /baseline: REGRESSED \(1 regressions, 0 improvements\)/);
+  assert.match(result.stdout, /attention:/);
+  assert.match(result.stdout, /strict_schema: WARN/);
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   assert.equal(report.baseline.status, "REGRESSED");
   assert.deepEqual(report.baseline.regressions, [{

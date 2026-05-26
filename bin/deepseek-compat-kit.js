@@ -479,10 +479,44 @@ async function probeEndpoint(args) {
     console.log(`[deepseek-compat-kit] wrote markdown capability report: ${markdownPath}`);
   }
 
+  if (outputPath || markdownPath) {
+    printProbeConsoleSummary(report);
+  }
+
   if (report.summary.failed > 0) return 1;
   if (failOnRegression && report.baseline?.regressions?.length > 0) return 1;
   if (failOnWarn && report.summary.warned > 0) return 1;
   return 0;
+}
+
+function printProbeConsoleSummary(report) {
+  console.log(`[deepseek-compat-kit] probe summary: ${report.summary.status} (${report.summary.passed} passed, ${report.summary.warned} warned, ${report.summary.failed} failed)`);
+  console.log(`[deepseek-compat-kit] capabilities: ${formatProbeCapabilities(report.summary.capabilities)}`);
+
+  if (report.baseline) {
+    console.log(`[deepseek-compat-kit] baseline: ${report.baseline.status} (${report.baseline.regressions.length} regressions, ${report.baseline.improvements.length} improvements)`);
+  }
+
+  const attention = report.checks
+    .filter((check) => check.status !== "PASS")
+    .slice(0, 3);
+
+  if (attention.length === 0) {
+    console.log("[deepseek-compat-kit] no immediate capability issues detected");
+    return;
+  }
+
+  console.log("[deepseek-compat-kit] attention:");
+  for (const check of attention) {
+    const firstNote = check.notes?.[0] ? ` - ${check.notes[0]}` : "";
+    console.log(`- ${check.capability}: ${check.status}${firstNote}`);
+  }
+}
+
+function formatProbeCapabilities(capabilities = {}) {
+  const entries = Object.entries(capabilities);
+  if (entries.length === 0) return "none";
+  return entries.map(([capability, status]) => `${capability}=${status}`).join(", ");
 }
 
 function compareProbeBaseline(baseline, current, baselinePath) {

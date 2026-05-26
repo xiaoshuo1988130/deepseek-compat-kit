@@ -48,6 +48,8 @@ npx deepseek-compat-kit probe \
 
 `probe` expects a base URL, but it will normalize a common mistake: if `--endpoint` ends with `/chat/completions`, the report records an endpoint diagnostic and sends requests to the corrected base URL.
 
+When `--out` or `--markdown` is used, the terminal also prints a compact summary with overall status, per-capability status, baseline regression status when applicable, and the first warnings or failures that need attention.
+
 Use `--timeout-ms` to cap each probe request. The default is `15000`.
 
 Use `--fail-on-warn` when running in CI and you want warning-level compatibility gaps to return exit code `1`. Without this flag, warnings are reported but the command only fails on failed checks.
