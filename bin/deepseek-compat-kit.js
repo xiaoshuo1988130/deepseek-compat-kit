@@ -12,7 +12,7 @@ const help = `DeepSeek CompatKit
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
-  compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
+  compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
@@ -96,10 +96,11 @@ function compileSchema(args) {
   const inputPath = argValue(args, "-i") || argValue(args, "--input") || args.find((arg) => !arg.startsWith("-"));
   const outputPath = argValue(args, "-o") || argValue(args, "--out");
   const reportPath = argValue(args, "--report");
+  const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   const dryRun = args.includes("--dry-run");
 
   if (!inputPath) {
-    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]");
+    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]");
     return 2;
   }
 
@@ -123,7 +124,14 @@ function compileSchema(args) {
   if (reportPath) {
     fs.writeFileSync(path.resolve(reportPath), `${JSON.stringify(report, null, 2)}\n`);
     console.log(`[deepseek-compat-kit] wrote compile report: ${reportPath}`);
-  } else if (report.summary.removed_constraints > 0 || report.summary.required_added > 0 || report.summary.additional_properties_fixed > 0) {
+  }
+
+  if (markdownPath) {
+    fs.writeFileSync(path.resolve(markdownPath), renderCompileMarkdown(report));
+    console.log(`[deepseek-compat-kit] wrote markdown compile report: ${markdownPath}`);
+  }
+
+  if (!reportPath && !markdownPath && hasCompileReportChanges(report)) {
     printCompileReport(report);
   }
 
@@ -255,6 +263,109 @@ function printCompileReport(report) {
     console.log("system_prompt_appendix:");
     console.log(report.system_prompt_appendix);
   }
+}
+
+function hasCompileReportChanges(report) {
+  return report.summary.removed_constraints > 0
+    || report.summary.required_added > 0
+    || report.summary.additional_properties_fixed > 0;
+}
+
+function renderCompileMarkdown(report) {
+  const lines = [
+    "# DeepSeek CompatKit Schema Compile Report",
+    "",
+    "Scope: generated JSON Schema / function schema conversion for DeepSeek strict-mode compatibility.",
+    "",
+    "## Summary",
+    "",
+    `Removed constraints: ${report.summary.removed_constraints}`,
+    `Required fields added: ${report.summary.required_added}`,
+    `additionalProperties fixed: ${report.summary.additional_properties_fixed}`,
+    "",
+    "## Removed Constraints",
+    "",
+    "| Path | Keyword | Value | Post-validation |",
+    "| --- | --- | --- | --- |",
+  ];
+
+  if (report.removed_constraints.length === 0) {
+    lines.push("|  |  |  | No unsupported constraints were removed. |");
+  } else {
+    for (const item of report.removed_constraints) {
+      lines.push(`| \`${escapeMarkdownTable(item.path)}\` | \`${escapeMarkdownTable(item.keyword)}\` | \`${escapeMarkdownTable(JSON.stringify(item.value))}\` | ${escapeMarkdownTable(item.prompt_instruction)} |`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## Required Fields Added",
+    "",
+    "| Path | Properties |",
+    "| --- | --- |",
+  );
+
+  if (report.required_added.length === 0) {
+    lines.push("|  | No required fields were added. |");
+  } else {
+    for (const item of report.required_added) {
+      lines.push(`| \`${escapeMarkdownTable(item.path)}\` | ${escapeMarkdownTable(item.properties.join(", "))} |`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## additionalProperties Fixes",
+    "",
+    "| Path | Value |",
+    "| --- | --- |",
+  );
+
+  if (report.additional_properties_fixed.length === 0) {
+    lines.push("|  | No additionalProperties fixes were needed. |");
+  } else {
+    for (const item of report.additional_properties_fixed) {
+      lines.push(`| \`${escapeMarkdownTable(item.path)}\` | \`${String(item.value)}\` |`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## System Prompt Appendix",
+    "",
+  );
+
+  if (report.system_prompt_appendix) {
+    lines.push("```text", report.system_prompt_appendix, "```");
+  } else {
+    lines.push("No prompt appendix is required.");
+  }
+
+  lines.push(
+    "",
+    "## Post-validation Plan",
+    "",
+  );
+
+  if (report.post_validation_plan.length === 0) {
+    lines.push("- No application-level post-validation was moved out of the schema.");
+  } else {
+    for (const item of report.post_validation_plan) {
+      lines.push(`- ${item}`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## Boundary",
+    "",
+    "- This report describes schema-shape conversion, not model quality.",
+    "- Removed constraints should be enforced in application code after structured output is returned.",
+    "- Review the generated schema before using it in production.",
+    "",
+  );
+
+  return `${lines.join("\n")}\n`;
 }
 
 function printCompilePlan(report) {

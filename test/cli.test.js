@@ -63,6 +63,7 @@ test("compile-schema writes DeepSeek strict schema and loss report", () => {
   const schemaPath = path.join(dir, "schema.json");
   const outPath = path.join(dir, "deepseek.schema.json");
   const reportPath = path.join(dir, "report.json");
+  const markdownPath = path.join(dir, "report.md");
   fs.writeFileSync(schemaPath, JSON.stringify({
     type: "function",
     function: {
@@ -98,9 +99,12 @@ test("compile-schema writes DeepSeek strict schema and loss report", () => {
     outPath,
     "--report",
     reportPath,
+    "--markdown",
+    markdownPath,
   ], { encoding: "utf8" });
   assert.equal(result.status, 0);
   assert.match(result.stdout, /wrote DeepSeek strict schema/);
+  assert.match(result.stdout, /wrote markdown compile report/);
 
   const compiled = JSON.parse(fs.readFileSync(outPath, "utf8"));
   const parameters = compiled.function.parameters;
@@ -119,6 +123,14 @@ test("compile-schema writes DeepSeek strict schema and loss report", () => {
   assert.equal(report.summary.additional_properties_fixed, 2);
   assert.match(report.system_prompt_appendix, /minimum string length of 2/);
   assert.match(report.system_prompt_appendix, /at most 3 item/);
+
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert.match(markdown, /# DeepSeek CompatKit Schema Compile Report/);
+  assert.match(markdown, /Removed constraints: 4/);
+  assert.match(markdown, /\| `\$\.properties\.query\.minLength` \| `minLength` \| `2` \|/);
+  assert.match(markdown, /System Prompt Appendix/);
+  assert.match(markdown, /minimum string length of 2/);
+  assert.match(markdown, /Post-validation Plan/);
 });
 
 test("compile-schema dry-run prints repair plan without writing files", () => {
@@ -126,6 +138,7 @@ test("compile-schema dry-run prints repair plan without writing files", () => {
   const schemaPath = path.join(dir, "schema.json");
   const outPath = path.join(dir, "deepseek.schema.json");
   const reportPath = path.join(dir, "report.json");
+  const markdownPath = path.join(dir, "report.md");
   fs.writeFileSync(schemaPath, JSON.stringify({
     parameters: {
       type: "object",
@@ -146,6 +159,8 @@ test("compile-schema dry-run prints repair plan without writing files", () => {
     outPath,
     "--report",
     reportPath,
+    "--markdown",
+    markdownPath,
     "--dry-run",
   ], { encoding: "utf8" });
 
@@ -158,6 +173,7 @@ test("compile-schema dry-run prints repair plan without writing files", () => {
   assert.match(result.stdout, /post_validation: properties\.username must have a minimum string length of 3/);
   assert.equal(fs.existsSync(outPath), false);
   assert.equal(fs.existsSync(reportPath), false);
+  assert.equal(fs.existsSync(markdownPath), false);
 });
 
 test("probe writes endpoint capability report against mock upstream", async (t) => {
