@@ -901,6 +901,14 @@ function renderProbeMarkdown(report) {
     "",
     ...renderProbeEndpointDiagnostics(report),
     "",
+    "## Execution Context",
+    "",
+    `API key env: \`${report.auth?.api_key_env || "none"}\``,
+    `API key present: ${report.auth?.api_key_present ? "yes" : "no"}`,
+    `Checks requested: ${renderInlineCodeList(report.checks_requested || report.checks.map((check) => check.capability))}`,
+    `Timeout: ${report.timeout_ms ?? "not recorded"} ms`,
+    `Fail on warn: ${report.fail_on_warn ? "yes" : "no"}`,
+    "",
     "## Profile Guidance",
     "",
     `Profile name: **${report.profile_guidance.name}**`,
@@ -963,6 +971,10 @@ function renderProbeEndpointDiagnostics(report) {
   }
 
   return report.endpoint_diagnostics.map((item) => `- ${item.level} \`${item.code}\`: ${item.message}`);
+}
+
+function renderInlineCodeList(items) {
+  return (items || []).map((item) => `\`${escapeMarkdownTable(item)}\``).join(", ") || "none";
 }
 
 function escapeMarkdownTable(value) {

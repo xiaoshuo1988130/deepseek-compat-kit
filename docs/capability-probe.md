@@ -99,7 +99,7 @@ The JSON report includes:
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.
 - `checks[]`: check-level HTTP status, duration, notes, impact, and recommendation.
 
-The Markdown report includes the same matrix plus human-readable recommendations.
+The Markdown report includes the same matrix, execution context, and human-readable recommendations.
 
 ## Common Follow-Ups
 

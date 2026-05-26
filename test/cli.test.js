@@ -282,6 +282,12 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /# DeepSeek CompatKit Capability Report/);
+  assert.match(markdown, /## Execution Context/);
+  assert.match(markdown, /API key env: `DEEPSEEK_API_KEY`/);
+  assert.match(markdown, /API key present: no/);
+  assert.match(markdown, /Checks requested: `chat_completions`, `streaming`, `multi_turn_tool_messages`, `strict_schema`/);
+  assert.match(markdown, /Timeout: 15000 ms/);
+  assert.match(markdown, /Fail on warn: no/);
   assert.match(markdown, /## Profile Guidance/);
   assert.match(markdown, /Third-party relay or API gateway/);
   assert.match(markdown, /Status: \*\*PASS\*\*/);
