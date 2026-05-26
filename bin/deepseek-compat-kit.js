@@ -465,11 +465,12 @@ async function probeEndpoint(args) {
   report.checks.push(await runProbeCheck({
     name: "strict_schema_request",
     capability: "strict_schema",
-    description: "Endpoint accepts a minimal strict tool schema request.",
-    impact: "Tool-calling agents can send DeepSeek strict-mode compatible function schemas.",
+    description: "Endpoint accepts a minimal strict tool schema request and returns the requested tool call.",
+    impact: "Tool-calling agents can send DeepSeek strict-mode compatible function schemas and receive usable tool_calls.",
     recommendation: "If this warns or fails, run compile-schema and lint-schema first, then confirm that the provider supports DeepSeek strict schema semantics.",
     request: buildStrictSchemaProbeRequest(model),
     baseUrl,
+    validatePayload: (payload) => validateToolCallPayload(payload, "record_query"),
   }));
 
   summarizeProbe(report);
@@ -699,7 +700,7 @@ function buildStrictSchemaProbeRequest(model) {
   };
 }
 
-async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false }) {
+async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null }) {
   const started = Date.now();
   const check = {
     name,
@@ -742,6 +743,13 @@ async function runProbeCheck({ name, capability, description, impact, recommenda
     if (Array.isArray(payload?.choices)) {
       check.status = "PASS";
       check.notes.push(`choices=${payload.choices.length}`);
+      if (validatePayload) {
+        const validationNotes = validatePayload(payload);
+        if (validationNotes.length > 0) {
+          check.status = "WARN";
+          check.notes.push(...validationNotes);
+        }
+      }
     } else {
       check.status = "WARN";
       check.notes.push("Response did not contain a choices array.");
@@ -753,6 +761,22 @@ async function runProbeCheck({ name, capability, description, impact, recommenda
     check.notes.push(error.message);
     return check;
   }
+}
+
+function validateToolCallPayload(payload, expectedFunctionName) {
+  const toolCalls = payload.choices
+    .flatMap((choice) => choice?.message?.tool_calls || [])
+    .filter(Boolean);
+
+  if (toolCalls.length === 0) {
+    return ["Response did not include tool_calls even though the request forced a tool call."];
+  }
+
+  if (expectedFunctionName && !toolCalls.some((toolCall) => toolCall?.function?.name === expectedFunctionName)) {
+    return [`Response tool_calls did not include expected function ${expectedFunctionName}.`];
+  }
+
+  return [];
 }
 
 function buildProbeHeaders(request) {

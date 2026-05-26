@@ -64,7 +64,7 @@ Use `--profile` to tune report guidance:
 | `chat_completions` | Minimal non-streaming `POST /chat/completions` | Verifies the basic OpenAI-compatible request path. |
 | `streaming` | `stream: true` with event-stream-like response | Verifies whether streaming clients can parse incremental responses. |
 | `multi_turn_tool_messages` | Follow-up request containing assistant `tool_calls`, `reasoning_content`, and a matching `tool` result | Verifies whether Agent loops can pass DeepSeek reasoning content back through multi-turn tool-call history. |
-| `strict_schema` | Minimal strict tool schema request | Verifies whether tool-calling agents can send DeepSeek strict-mode compatible schemas. |
+| `strict_schema` | Minimal strict tool schema request with forced tool choice | Verifies whether tool-calling agents can send DeepSeek strict-mode compatible schemas and receive usable `tool_calls`. |
 
 ## Reading the Report
 
@@ -103,7 +103,7 @@ If `strict_schema` warns or fails:
 
 - Run `compile-schema --dry-run` on generated tool schemas.
 - Run `lint-schema --strict --base-url https://api.deepseek.com/beta`.
-- Confirm that the relay or self-hosted endpoint supports DeepSeek strict schema behavior.
+- Confirm that the relay or self-hosted endpoint supports DeepSeek strict schema behavior and does not silently ignore forced tool calls.
 
 ## Boundary
 

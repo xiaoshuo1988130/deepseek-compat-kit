@@ -196,6 +196,26 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
         return;
       }
 
+      if (body.tool_choice?.function?.name === "record_query") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          choices: [{
+            message: {
+              role: "assistant",
+              tool_calls: [{
+                id: "call_probe_query",
+                type: "function",
+                function: {
+                  name: "record_query",
+                  arguments: "{\"query\":\"compatibility\"}",
+                },
+              }],
+            },
+          }],
+        }));
+        return;
+      }
+
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
     }).catch((error) => {
@@ -269,10 +289,61 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(markdown, /No immediate compatibility issues/);
 });
 
+test("probe warns when strict schema response lacks tool calls", async (t) => {
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      if (body.stream) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "ok" } }] })}\n\n`);
+        response.write("data: [DONE]\n\n");
+        response.end();
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "capability-report.json");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--model",
+    "mock-model",
+    "--out",
+    reportPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.summary.status, "WARN");
+  assert.equal(report.summary.warned, 1);
+  assert.equal(report.summary.capabilities.strict_schema, "WARN");
+  const strictSchemaCheck = report.checks.find((check) => check.name === "strict_schema_request");
+  assert.match(strictSchemaCheck.notes.join("\n"), /did not include tool_calls/);
+});
+
 test("probe normalizes full chat completions endpoint URLs", async (t) => {
   const seenPaths = [];
   const mock = http.createServer((request, response) => {
-    collectRequestJson(request).then(() => {
+    collectRequestJson(request).then((body) => {
       const pathname = new URL(request.url, "http://127.0.0.1").pathname;
       seenPaths.push(pathname);
       if (request.method !== "POST" || pathname !== "/v1/chat/completions") {
@@ -286,6 +357,26 @@ test("probe normalizes full chat completions endpoint URLs", async (t) => {
         response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "ok" } }] })}\n\n`);
         response.write("data: [DONE]\n\n");
         response.end();
+        return;
+      }
+
+      if (body.tool_choice?.function?.name === "record_query") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          choices: [{
+            message: {
+              role: "assistant",
+              tool_calls: [{
+                id: "call_probe_query",
+                type: "function",
+                function: {
+                  name: "record_query",
+                  arguments: "{\"query\":\"compatibility\"}",
+                },
+              }],
+            },
+          }],
+        }));
         return;
       }
 
