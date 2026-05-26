@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -405,13 +405,18 @@ async function probeEndpoint(args) {
   const timeoutMs = timeoutMsRaw === undefined ? 15000 : Number(timeoutMsRaw);
   const apiKeyEnv = argValue(args, "--api-key-env") || resolveProbeApiKeyEnv();
   const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : "";
+  const selectedChecks = parseProbeChecks(argValue(args, "--checks") || "all");
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
     return 2;
   }
   if (!profile) {
     console.error("Unknown probe profile. Available profiles: official, openai, relay, self-hosted");
+    return 2;
+  }
+  if (!selectedChecks) {
+    console.error(`Unknown probe check. Available checks: ${availableProbeCheckCapabilities().join(", ")}`);
     return 2;
   }
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
@@ -434,6 +439,7 @@ async function probeEndpoint(args) {
       api_key_env: apiKeyEnv || null,
       api_key_present: Boolean(apiKey),
     },
+    checks_requested: selectedChecks,
     timeout_ms: timeoutMs,
     fail_on_warn: failOnWarn,
     scope: "functional compatibility probe, not a benchmark",
@@ -446,55 +452,10 @@ async function probeEndpoint(args) {
     },
   };
 
-  report.checks.push(await runProbeCheck({
-    name: "chat_completions",
-    capability: "chat_completions",
-    description: "POST /chat/completions accepts a minimal non-streaming request.",
-    impact: "Basic OpenAI-compatible request path works.",
-    recommendation: "If this fails, verify that the endpoint root is correct, includes the right /v1 prefix, uses a valid API key, and exposes the selected model.",
-    request: buildProbeRequest({ model, stream: false }),
-    baseUrl,
-    apiKey,
-    timeoutMs,
-  }));
-
-  report.checks.push(await runProbeCheck({
-    name: "streaming",
-    capability: "streaming",
-    description: "POST /chat/completions accepts stream: true and returns an event-stream-like response.",
-    impact: "Streaming clients can parse incremental responses from this endpoint.",
-    recommendation: "If this warns or fails, disable streaming while triaging the provider or gateway, then retest after the endpoint is fixed.",
-    request: buildProbeRequest({ model, stream: true }),
-    baseUrl,
-    expectStream: true,
-    apiKey,
-    timeoutMs,
-  }));
-
-  report.checks.push(await runProbeCheck({
-    name: "multi_turn_tool_messages",
-    capability: "multi_turn_tool_messages",
-    description: "Endpoint accepts a follow-up request containing assistant tool_calls, reasoning_content, and tool results.",
-    impact: "Multi-turn tool-calling agents can pass DeepSeek reasoning_content back alongside tool results.",
-    recommendation: "If this warns or fails, confirm that the framework preserves reasoning_content and that the provider accepts DeepSeek tool-call message history.",
-    request: buildMultiTurnToolProbeRequest(model),
-    baseUrl,
-    apiKey,
-    timeoutMs,
-  }));
-
-  report.checks.push(await runProbeCheck({
-    name: "strict_schema_request",
-    capability: "strict_schema",
-    description: "Endpoint accepts a minimal strict tool schema request and returns the requested tool call.",
-    impact: "Tool-calling agents can send DeepSeek strict-mode compatible function schemas and receive usable tool_calls.",
-    recommendation: "If this warns or fails, run compile-schema and lint-schema first, then confirm that the provider supports DeepSeek strict schema semantics.",
-    request: buildStrictSchemaProbeRequest(model),
-    baseUrl,
-    validatePayload: (payload) => validateToolCallPayload(payload, "record_query"),
-    apiKey,
-    timeoutMs,
-  }));
+  for (const check of buildProbeChecks(model, baseUrl, apiKey, timeoutMs)) {
+    if (!selectedChecks.includes(check.capability)) continue;
+    report.checks.push(await runProbeCheck(check));
+  }
 
   summarizeProbe(report);
   const text = `${JSON.stringify(report, null, 2)}\n`;
@@ -513,6 +474,79 @@ async function probeEndpoint(args) {
   if (report.summary.failed > 0) return 1;
   if (failOnWarn && report.summary.warned > 0) return 1;
   return 0;
+}
+
+function buildProbeChecks(model, baseUrl, apiKey, timeoutMs) {
+  return [{
+    name: "chat_completions",
+    capability: "chat_completions",
+    description: "POST /chat/completions accepts a minimal non-streaming request.",
+    impact: "Basic OpenAI-compatible request path works.",
+    recommendation: "If this fails, verify that the endpoint root is correct, includes the right /v1 prefix, uses a valid API key, and exposes the selected model.",
+    request: buildProbeRequest({ model, stream: false }),
+    baseUrl,
+    apiKey,
+    timeoutMs,
+  }, {
+    name: "streaming",
+    capability: "streaming",
+    description: "POST /chat/completions accepts stream: true and returns an event-stream-like response.",
+    impact: "Streaming clients can parse incremental responses from this endpoint.",
+    recommendation: "If this warns or fails, disable streaming while triaging the provider or gateway, then retest after the endpoint is fixed.",
+    request: buildProbeRequest({ model, stream: true }),
+    baseUrl,
+    expectStream: true,
+    apiKey,
+    timeoutMs,
+  }, {
+    name: "multi_turn_tool_messages",
+    capability: "multi_turn_tool_messages",
+    description: "Endpoint accepts a follow-up request containing assistant tool_calls, reasoning_content, and tool results.",
+    impact: "Multi-turn tool-calling agents can pass DeepSeek reasoning_content back alongside tool results.",
+    recommendation: "If this warns or fails, confirm that the framework preserves reasoning_content and that the provider accepts DeepSeek tool-call message history.",
+    request: buildMultiTurnToolProbeRequest(model),
+    baseUrl,
+    apiKey,
+    timeoutMs,
+  }, {
+    name: "strict_schema_request",
+    capability: "strict_schema",
+    description: "Endpoint accepts a minimal strict tool schema request and returns the requested tool call.",
+    impact: "Tool-calling agents can send DeepSeek strict-mode compatible function schemas and receive usable tool_calls.",
+    recommendation: "If this warns or fails, run compile-schema and lint-schema first, then confirm that the provider supports DeepSeek strict schema semantics.",
+    request: buildStrictSchemaProbeRequest(model),
+    baseUrl,
+    validatePayload: (payload) => validateToolCallPayload(payload, "record_query"),
+    apiKey,
+    timeoutMs,
+  }];
+}
+
+function availableProbeCheckCapabilities() {
+  return [
+    "chat_completions",
+    "streaming",
+    "multi_turn_tool_messages",
+    "strict_schema",
+  ];
+}
+
+function parseProbeChecks(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.toLowerCase() === "all") return availableProbeCheckCapabilities();
+  const names = raw.split(",").map((item) => normalizeProbeCheckName(item)).filter(Boolean);
+  if (names.length === 0) return null;
+  if (names.some((name) => !availableProbeCheckCapabilities().includes(name))) return null;
+  return [...new Set(names)];
+}
+
+function normalizeProbeCheckName(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/-/g, "_");
+  if (["chat", "chat_completion", "chat_completions"].includes(normalized)) return "chat_completions";
+  if (["stream", "streaming"].includes(normalized)) return "streaming";
+  if (["multi_turn", "tool_messages", "multi_turn_tool_messages", "reasoning_content"].includes(normalized)) return "multi_turn_tool_messages";
+  if (["strict", "strict_schema", "schema"].includes(normalized)) return "strict_schema";
+  return normalized;
 }
 
 function normalizeProbeEndpoint(value) {

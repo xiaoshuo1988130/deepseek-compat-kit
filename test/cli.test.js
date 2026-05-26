@@ -291,6 +291,72 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(markdown, /No immediate compatibility issues/);
 });
 
+test("probe can run a selected subset of checks", async (t) => {
+  const requestBodies = [];
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      requestBodies.push(body);
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        choices: [{
+          message: {
+            role: "assistant",
+            tool_calls: [{
+              id: "call_probe_query",
+              type: "function",
+              function: {
+                name: "record_query",
+                arguments: "{\"query\":\"compatibility\"}",
+              },
+            }],
+          },
+        }],
+      }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "selected-capability-report.json");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--model",
+    "mock-model",
+    "--checks",
+    "strict",
+    "--out",
+    reportPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  assert.equal(requestBodies.length, 1);
+  assert.equal(requestBodies[0].tool_choice?.function?.name, "record_query");
+
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.deepEqual(report.checks_requested, ["strict_schema"]);
+  assert.equal(report.summary.status, "PASS");
+  assert.equal(report.summary.passed, 1);
+  assert.deepEqual(report.summary.capabilities, {
+    strict_schema: "PASS",
+  });
+  assert.deepEqual(report.checks.map((check) => check.capability), ["strict_schema"]);
+});
+
 test("probe warns when strict schema response lacks tool calls", async (t) => {
   const mock = http.createServer((request, response) => {
     collectRequestJson(request).then((body) => {
@@ -572,6 +638,21 @@ test("probe rejects unknown profiles before network calls", async () => {
 
   assert.equal(result.status, 2);
   assert.match(result.stderr, /Unknown probe profile/);
+});
+
+test("probe rejects unknown selected checks before network calls", async () => {
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    "http://127.0.0.1:1",
+    "--checks",
+    "strict_schema,unknown",
+  ]);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Unknown probe check/);
+  assert.match(result.stderr, /strict_schema/);
 });
 
 test("inventory reports DeepSeek hints without leaking secret values", () => {

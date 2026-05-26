@@ -54,6 +54,16 @@ Use `--fail-on-warn` when running in CI and you want warning-level compatibility
 
 Use `--api-key-env NAME` when the endpoint uses a non-DeepSeek environment variable. By default, `probe` uses `DEEPSEEK_API_KEY` when present, then `OPENAI_API_KEY` when present. Reports only record the environment variable name and whether a value was present; API keys are never written to JSON or Markdown reports.
 
+Use `--checks` to run a subset of checks when you want a cheaper CI gate or a focused triage run:
+
+```bash
+npx deepseek-compat-kit probe \
+  --endpoint https://relay.example.com/v1 \
+  --model deepseek-chat \
+  --checks strict_schema,multi_turn_tool_messages \
+  --fail-on-warn
+```
+
 ## Profiles
 
 Use `--profile` to tune report guidance:
@@ -81,6 +91,7 @@ The JSON report includes:
 - `summary.status`: `PASS`, `WARN`, or `FAIL`.
 - `summary.capabilities`: per-capability status.
 - `auth.api_key_env` and `auth.api_key_present`: which environment variable was used, without the secret value.
+- `checks_requested`: the selected capability checks for this run.
 - `timeout_ms` and `fail_on_warn`: execution controls used for this run.
 - `endpoint_input` and `endpoint_diagnostics`: original endpoint plus any normalization warnings.
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.
