@@ -54,6 +54,8 @@ Use `--fail-on-warn` when running in CI and you want warning-level compatibility
 
 Use `--api-key-env NAME` when the endpoint uses a non-DeepSeek environment variable. By default, `probe` uses `DEEPSEEK_API_KEY` when present, then `OPENAI_API_KEY` when present. Reports only record the environment variable name and whether a value was present; API keys are never written to JSON or Markdown reports.
 
+When an endpoint returns an error body, `probe` includes a short sanitized excerpt in the report. Bearer tokens, `sk-...` API keys, email addresses, and common URL token parameters are redacted before writing JSON or Markdown reports.
+
 Use `--checks` to run a subset of checks when you want a cheaper CI gate or a focused triage run:
 
 ```bash

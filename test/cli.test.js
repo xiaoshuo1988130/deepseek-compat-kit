@@ -626,6 +626,63 @@ test("probe reads API key from explicit env without leaking it", async (t) => {
   assert.doesNotMatch(result.stdout, new RegExp(secret));
 });
 
+test("probe redacts secrets from upstream error bodies", async (t) => {
+  const secretKey = "sk-upstreamsecretvalue1234567890";
+  const bearer = "Bearer upstreambearersecret1234567890";
+  const email = "owner@example.com";
+  const url = `https://relay.example.com/v1/chat/completions?access_token=upstream-token-secret`;
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then(() => {
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      response.writeHead(400, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        error: {
+          message: `bad request for ${email}`,
+          authorization: bearer,
+          api_key: secretKey,
+          callback: url,
+        },
+      }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "redacted-error-report.json");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--checks",
+    "chat",
+    "--out",
+    reportPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  const reportText = fs.readFileSync(reportPath, "utf8");
+  assert.doesNotMatch(reportText, new RegExp(secretKey));
+  assert.doesNotMatch(reportText, /upstreambearersecret/);
+  assert.doesNotMatch(reportText, new RegExp(email));
+  assert.doesNotMatch(reportText, /upstream-token-secret/);
+  assert.match(reportText, /sk-<redacted>/);
+  assert.match(reportText, /Bearer <redacted>/);
+  assert.match(reportText, /<redacted:email>/);
+  assert.match(reportText, /access_token=<redacted>/);
+});
+
 test("probe rejects unknown profiles before network calls", async () => {
   const result = await runNode([
     bin,

@@ -862,7 +862,7 @@ function buildProbeHeaders(request, apiKey = "") {
 async function summarizeProbeError(response) {
   const contentType = response.headers.get("content-type") || "";
   const text = await response.text();
-  const trimmed = text.trim().slice(0, 500);
+  const trimmed = sanitizeScalar(text.trim()).slice(0, 500);
   return `HTTP ${response.status} ${response.statusText}; ${contentType || "no content-type"}; ${trimmed || "empty body"}`;
 }
 
