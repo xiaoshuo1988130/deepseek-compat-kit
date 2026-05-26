@@ -66,6 +66,17 @@ npx deepseek-compat-kit probe \
   --fail-on-warn
 ```
 
+Use `--baseline` to compare the current endpoint against an earlier probe report. Add `--fail-on-regression` in CI when capability regressions should block a change:
+
+```bash
+npx deepseek-compat-kit probe \
+  --endpoint https://relay.example.com/v1 \
+  --model deepseek-chat \
+  --checks strict_schema,multi_turn_tool_messages \
+  --baseline ./previous-capability-report.json \
+  --fail-on-regression
+```
+
 ## Profiles
 
 Use `--profile` to tune report guidance:
@@ -94,6 +105,7 @@ The JSON report includes:
 - `summary.capabilities`: per-capability status.
 - `auth.api_key_env` and `auth.api_key_present`: which environment variable was used, without the secret value.
 - `checks_requested`: the selected capability checks for this run.
+- `baseline`: regression, improvement, and unchanged capability comparison when `--baseline` is used.
 - `timeout_ms` and `fail_on_warn`: execution controls used for this run.
 - `endpoint_input` and `endpoint_diagnostics`: original endpoint plus any normalization warnings.
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.

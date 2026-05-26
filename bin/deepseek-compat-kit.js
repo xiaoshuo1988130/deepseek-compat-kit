@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -406,9 +406,11 @@ async function probeEndpoint(args) {
   const apiKeyEnv = argValue(args, "--api-key-env") || resolveProbeApiKeyEnv();
   const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : "";
   const selectedChecks = parseProbeChecks(argValue(args, "--checks") || "all");
+  const baselinePath = argValue(args, "--baseline");
+  const failOnRegression = args.includes("--fail-on-regression");
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
     return 2;
   }
   if (!profile) {
@@ -440,6 +442,8 @@ async function probeEndpoint(args) {
       api_key_present: Boolean(apiKey),
     },
     checks_requested: selectedChecks,
+    baseline_path: baselinePath || null,
+    fail_on_regression: failOnRegression,
     timeout_ms: timeoutMs,
     fail_on_warn: failOnWarn,
     scope: "functional compatibility probe, not a benchmark",
@@ -458,6 +462,10 @@ async function probeEndpoint(args) {
   }
 
   summarizeProbe(report);
+  if (baselinePath) {
+    report.baseline = compareProbeBaseline(readJson(baselinePath), report, baselinePath);
+  }
+
   const text = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) {
     fs.writeFileSync(path.resolve(outputPath), text);
@@ -472,7 +480,47 @@ async function probeEndpoint(args) {
   }
 
   if (report.summary.failed > 0) return 1;
+  if (failOnRegression && report.baseline?.regressions?.length > 0) return 1;
   if (failOnWarn && report.summary.warned > 0) return 1;
+  return 0;
+}
+
+function compareProbeBaseline(baseline, current, baselinePath) {
+  const baselineCapabilities = baseline?.summary?.capabilities || {};
+  const currentCapabilities = current?.summary?.capabilities || {};
+  const capabilities = [...new Set([
+    ...Object.keys(baselineCapabilities),
+    ...Object.keys(currentCapabilities),
+  ])].sort();
+  const comparison = {
+    path: baselinePath,
+    generated_at: baseline?.generated_at || null,
+    endpoint: baseline?.endpoint || null,
+    status: "UNCHANGED",
+    regressions: [],
+    improvements: [],
+    unchanged: [],
+  };
+
+  for (const capability of capabilities) {
+    const previous = baselineCapabilities[capability] || "MISSING";
+    const currentStatus = currentCapabilities[capability] || "MISSING";
+    const item = { capability, previous, current: currentStatus };
+    const delta = probeStatusRank(currentStatus) - probeStatusRank(previous);
+    if (delta < 0) comparison.regressions.push(item);
+    else if (delta > 0) comparison.improvements.push(item);
+    else comparison.unchanged.push(item);
+  }
+
+  if (comparison.regressions.length > 0) comparison.status = "REGRESSED";
+  else if (comparison.improvements.length > 0) comparison.status = "IMPROVED";
+  return comparison;
+}
+
+function probeStatusRank(status) {
+  if (status === "PASS") return 3;
+  if (status === "WARN") return 2;
+  if (status === "FAIL") return 1;
   return 0;
 }
 
@@ -908,6 +956,8 @@ function renderProbeMarkdown(report) {
     `Checks requested: ${renderInlineCodeList(report.checks_requested || report.checks.map((check) => check.capability))}`,
     `Timeout: ${report.timeout_ms ?? "not recorded"} ms`,
     `Fail on warn: ${report.fail_on_warn ? "yes" : "no"}`,
+    `Baseline: ${report.baseline_path ? `\`${report.baseline_path}\`` : "none"}`,
+    `Fail on regression: ${report.fail_on_regression ? "yes" : "no"}`,
     "",
     "## Profile Guidance",
     "",
@@ -943,6 +993,20 @@ function renderProbeMarkdown(report) {
   }
 
   const actionable = report.checks.filter((check) => check.status !== "PASS");
+  if (report.baseline) {
+    lines.push("", "## Baseline Comparison", "");
+    lines.push(`Status: **${report.baseline.status}**`);
+    lines.push(`Baseline report: \`${report.baseline.path}\``);
+    lines.push(`Regressions: ${report.baseline.regressions.length}`);
+    lines.push(`Improvements: ${report.baseline.improvements.length}`);
+    if (report.baseline.regressions.length > 0) {
+      lines.push("", "| Capability | Previous | Current |", "| --- | --- | --- |");
+      for (const item of report.baseline.regressions) {
+        lines.push(`| \`${escapeMarkdownTable(item.capability)}\` | ${item.previous} | ${item.current} |`);
+      }
+    }
+  }
+
   lines.push("", "## Recommendations", "");
   if (actionable.length === 0) {
     lines.push("- No immediate compatibility issues were detected by this functional probe.");

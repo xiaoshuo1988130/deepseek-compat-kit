@@ -288,6 +288,8 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(markdown, /Checks requested: `chat_completions`, `streaming`, `multi_turn_tool_messages`, `strict_schema`/);
   assert.match(markdown, /Timeout: 15000 ms/);
   assert.match(markdown, /Fail on warn: no/);
+  assert.match(markdown, /Baseline: none/);
+  assert.match(markdown, /Fail on regression: no/);
   assert.match(markdown, /## Profile Guidance/);
   assert.match(markdown, /Third-party relay or API gateway/);
   assert.match(markdown, /Status: \*\*PASS\*\*/);
@@ -426,6 +428,95 @@ test("probe warns when strict schema response lacks tool calls", async (t) => {
   ]);
 
   assert.equal(strictResult.status, 1);
+});
+
+test("probe compares against a baseline report and can fail on regression", async (t) => {
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      if (body.stream) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "ok" } }] })}\n\n`);
+        response.write("data: [DONE]\n\n");
+        response.end();
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const reportPath = path.join(dir, "current.json");
+  const markdownPath = path.join(dir, "current.md");
+  fs.writeFileSync(baselinePath, `${JSON.stringify({
+    generated_at: "2026-05-25T00:00:00.000Z",
+    endpoint: "https://baseline.example.com/v1",
+    summary: {
+      capabilities: {
+        strict_schema: "PASS",
+      },
+    },
+  }, null, 2)}\n`);
+
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--checks",
+    "strict_schema",
+    "--baseline",
+    baselinePath,
+    "--out",
+    reportPath,
+    "--markdown",
+    markdownPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.baseline.status, "REGRESSED");
+  assert.deepEqual(report.baseline.regressions, [{
+    capability: "strict_schema",
+    previous: "PASS",
+    current: "WARN",
+  }]);
+
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert.match(markdown, /## Baseline Comparison/);
+  assert.match(markdown, /Status: \*\*REGRESSED\*\*/);
+  assert.match(markdown, /\| `strict_schema` \| PASS \| WARN \|/);
+
+  const gated = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--checks",
+    "strict_schema",
+    "--baseline",
+    baselinePath,
+    "--fail-on-regression",
+    "--out",
+    path.join(dir, "gated.json"),
+  ]);
+
+  assert.equal(gated.status, 1);
 });
 
 test("probe normalizes full chat completions endpoint URLs", async (t) => {
