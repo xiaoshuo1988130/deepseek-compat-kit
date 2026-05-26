@@ -272,6 +272,12 @@ test("inventory reports DeepSeek hints without leaking secret values", () => {
     model: "deepseek-chat",
     baseURL: "http://127.0.0.1:8787/v1",
   }, null, 2));
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({
+    dependencies: {
+      openai: "^4.0.0",
+      "@langchain/openai": "^0.6.0",
+    },
+  }, null, 2));
 
   const result = spawnSync(process.execPath, [
     bin,
@@ -302,7 +308,14 @@ test("inventory reports DeepSeek hints without leaking secret values", () => {
   assert.equal(report.summary.warnings, 4);
   assert.equal(report.summary.base_urls, 1);
   assert.equal(report.summary.models, 1);
+  assert.deepEqual(report.summary.detected_targets, ["langchain-js", "openai-js"]);
+  assert.match(reportText, /DSK_REC_DOCTOR_TARGET/);
+  assert.match(reportText, /doctor --target openai-js/);
+  assert.match(reportText, /doctor --target langchain-js/);
   assert.match(markdown, /# DeepSeek CompatKit Inventory Report/);
+  assert.match(markdown, /Detected targets: `langchain-js`, `openai-js`/);
+  assert.match(markdown, /## Recommendations/);
+  assert.match(markdown, /doctor --target openai-js/);
 });
 
 test("recipes lists and prints the OpenCode recipe", () => {
@@ -411,6 +424,9 @@ test("doctor can combine inventory summary with a target recipe", () => {
   assert.match(report, /# DeepSeek CompatKit Doctor: OpenCode/);
   assert.match(report, /## Local Inventory Summary/);
   assert.match(report, /Warnings: 2/);
+  assert.match(report, /Detected targets: `opencode`/);
+  assert.match(report, /### Inventory Recommendations/);
+  assert.match(report, /doctor --target opencode/);
   assert.match(report, /deepseek-chat/);
   assert.match(report, /## Target Recipe/);
   assert.match(report, /OpenCode \+ DeepSeek CompatKit Recipe/);

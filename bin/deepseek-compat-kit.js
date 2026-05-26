@@ -706,8 +706,10 @@ function createInventoryReport(root) {
       deepseek_references: 0,
       base_urls: 0,
       models: 0,
+      detected_targets: [],
     },
     findings: [],
+    recommendations: [],
   };
 }
 
@@ -797,6 +799,7 @@ function inspectInventoryFile(filePath, root, report) {
   const relativePath = path.relative(root, filePath) || path.basename(filePath);
   const lines = text.split(/\r?\n/);
   lines.forEach((line, index) => inspectInventoryLine(line, index + 1, relativePath, report));
+  inspectInventoryFileName(relativePath, report);
 }
 
 function inspectInventoryLine(line, lineNumber, filePath, report) {
@@ -854,6 +857,72 @@ function inspectInventoryLine(line, lineNumber, filePath, report) {
       message: "Potential raw API key or bearer token found; value redacted.",
     });
   }
+
+  for (const target of detectInventoryTargets(line, filePath)) {
+    addInventoryFinding(report, {
+      level: "INFO",
+      code: "DSK_INV_TARGET",
+      file: filePath,
+      line: lineNumber,
+      target: target.name,
+      value: target.name,
+      message: target.reason,
+    });
+  }
+}
+
+function inspectInventoryFileName(relativePath, report) {
+  const base = path.basename(relativePath).toLowerCase();
+  if (base === "opencode.json") {
+    addInventoryFinding(report, {
+      level: "INFO",
+      code: "DSK_INV_TARGET",
+      file: relativePath,
+      line: 1,
+      target: "opencode",
+      value: "opencode",
+      message: "OpenCode configuration file detected.",
+    });
+  }
+}
+
+function detectInventoryTargets(line, filePath) {
+  const lowered = line.toLowerCase();
+  const targets = [];
+  const base = path.basename(filePath).toLowerCase();
+
+  if (base === "package.json" || /\.(?:js|mjs|cjs|ts|tsx|jsx)$/.test(filePath)) {
+    if (/(["']openai["']\s*:|from\s+["']openai["']|require\(\s*["']openai["']\s*\))/.test(line)) {
+      targets.push({ name: "openai-js", reason: "OpenAI JS SDK dependency or import detected." });
+    }
+
+    if (/(["']@langchain\/openai["']\s*:|from\s+["']@langchain\/openai["']|require\(\s*["']@langchain\/openai["']\s*\))/.test(line)) {
+      targets.push({ name: "langchain-js", reason: "LangChain OpenAI integration dependency or import detected." });
+    }
+  }
+
+  if (/\bopencode\b/.test(lowered)) {
+    targets.push({ name: "opencode", reason: "OpenCode reference detected." });
+  }
+
+  if (/\bcline\b/.test(lowered)) {
+    targets.push({ name: "cline", reason: "Cline reference detected." });
+  }
+
+  if (/\b(?:roo code|roocode|roo-code)\b/.test(lowered)) {
+    targets.push({ name: "roo-code", reason: "Roo Code reference detected." });
+  }
+
+  return dedupeTargets(targets);
+}
+
+function dedupeTargets(targets) {
+  const seen = new Set();
+  return targets.filter((target) => {
+    if (seen.has(target.name)) return false;
+    seen.add(target.name);
+    return true;
+  });
 }
 
 function extractInventoryUrls(line) {
@@ -894,6 +963,61 @@ function summarizeInventory(report) {
   report.summary.deepseek_references = report.findings.filter((finding) => finding.code === "DSK_INV_DEEPSEEK_REFERENCE").length;
   report.summary.base_urls = report.findings.filter((finding) => finding.code === "DSK_INV_BASE_URL").length;
   report.summary.models = report.findings.filter((finding) => finding.code === "DSK_INV_MODEL").length;
+  report.summary.detected_targets = uniqueInventoryTargets(report);
+  report.recommendations = buildInventoryRecommendations(report);
+}
+
+function uniqueInventoryTargets(report) {
+  return [...new Set(report.findings
+    .filter((finding) => finding.code === "DSK_INV_TARGET" && finding.target)
+    .map((finding) => finding.target))]
+    .sort();
+}
+
+function buildInventoryRecommendations(report) {
+  const recommendations = [];
+  if (report.summary.detected_targets.length === 0) {
+    recommendations.push({
+      code: "DSK_REC_INVENTORY_ONLY",
+      command: "npx deepseek-compat-kit recipes",
+      message: "No specific framework target was detected. List available recipes and choose one manually.",
+    });
+  } else {
+    for (const target of report.summary.detected_targets) {
+      recommendations.push({
+        code: "DSK_REC_DOCTOR_TARGET",
+        target,
+        command: `npx deepseek-compat-kit doctor --target ${target} --path . --markdown ./DeepSeek_Doctor.md`,
+        message: `Run the print-only doctor recipe for ${target}.`,
+      });
+    }
+  }
+
+  if (report.summary.base_urls > 0 || report.summary.models > 0) {
+    recommendations.push({
+      code: "DSK_REC_PROBE_ENDPOINT",
+      command: "npx deepseek-compat-kit probe --endpoint <base-url> --model deepseek-chat --profile relay --out ./deepseek-capability-report.json --markdown ./Capability_Report.md",
+      message: "Probe the endpoint before running a real agent task.",
+    });
+  }
+
+  if (report.summary.warnings > 0) {
+    recommendations.push({
+      code: "DSK_REC_REDACT_SECRETS",
+      command: "Move API keys to environment variables or a local secret store before sharing reports.",
+      message: "Potential secret assignments were detected; values were redacted from this report.",
+    });
+  }
+
+  return recommendations;
+}
+
+function renderInventoryRecommendations(report) {
+  if (report.recommendations.length === 0) return ["- No immediate recommendations."];
+  return report.recommendations.flatMap((recommendation) => [
+    `- ${recommendation.message}`,
+    `  - \`${escapeMarkdownTable(recommendation.command)}\``,
+  ]);
 }
 
 function renderInventoryMarkdown(report) {
@@ -912,6 +1036,11 @@ function renderInventoryMarkdown(report) {
     `DeepSeek references: ${report.summary.deepseek_references}`,
     `Base URLs: ${report.summary.base_urls}`,
     `Models: ${report.summary.models}`,
+    `Detected targets: ${report.summary.detected_targets.length > 0 ? report.summary.detected_targets.map((target) => `\`${target}\``).join(", ") : "none"}`,
+    "",
+    "## Recommendations",
+    "",
+    ...renderInventoryRecommendations(report),
     "",
     "## Findings",
     "",
@@ -1021,6 +1150,14 @@ function renderDoctorMarkdown({ recipe, inventoryReport }) {
       `DeepSeek references: ${inventoryReport.summary.deepseek_references}`,
       `Base URLs: ${inventoryReport.summary.base_urls}`,
       `Models: ${inventoryReport.summary.models}`,
+      `Detected targets: ${inventoryReport.summary.detected_targets.length > 0 ? inventoryReport.summary.detected_targets.map((item) => `\`${item}\``).join(", ") : "none"}`,
+      "",
+    );
+
+    lines.push(
+      "### Inventory Recommendations",
+      "",
+      ...renderInventoryRecommendations(inventoryReport),
       "",
     );
 

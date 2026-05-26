@@ -93,7 +93,7 @@ npx deepseek-compat-kit recipes openai-js
 npx deepseek-compat-kit recipes langchain-js
 ```
 
-The inventory and doctor paths are intentionally conservative: they scan only the explicit local path, redact secret values, print configuration prescriptions, and do not modify local tool files.
+The inventory and doctor paths are intentionally conservative: they scan only the explicit local path, redact secret values, detect likely adoption targets, print configuration prescriptions, and do not modify local tool files.
 
 The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
 

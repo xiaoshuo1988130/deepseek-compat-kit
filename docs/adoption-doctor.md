@@ -18,8 +18,18 @@ It looks for:
 - DeepSeek model names such as `deepseek-chat`.
 - DeepSeek or local proxy base URL candidates.
 - API key variable assignments and raw key-like strings.
+- Tool or framework targets such as OpenCode, Cline, OpenAI JS SDK, and LangChain JS.
 
 Secret values are never recorded in the JSON or Markdown report. The report only records variable names, file paths, line numbers, and diagnostic codes.
+
+Inventory also emits conservative recommendations. For example, if it detects `openai` or `@langchain/openai` dependencies, it suggests the matching print-only doctor command:
+
+```bash
+npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepSeek_Doctor.md
+```
+
+These recommendations do not change files. They are routing hints for the next diagnostic step.
 
 ## Doctor
 
