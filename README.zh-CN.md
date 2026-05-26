@@ -64,10 +64,11 @@ WARN DSK_REASONING_003 messages[1]: injected cached reasoning_content for 1 tool
 
 ```bash
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json --check
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json --markdown ./deepseek.schema.report.md
 ```
 
-建议先用 `--dry-run` 预览计划改动，不写入文件。JSON 和 Markdown 报告会包含被移除的约束、`system_prompt_appendix` 和需要回到应用层执行的 `post_validation_plan`。
+建议先用 `--dry-run` 预览计划改动，不写入文件。如果要在 CI 里把 schema 修复需求当成阻断项，可以用 `--check`。JSON 和 Markdown 报告会包含被移除的约束、`system_prompt_appendix` 和需要回到应用层执行的 `post_validation_plan`。
 
 探测官方、中转商或自托管 OpenAI-compatible endpoint 的 Agent 能力：
 

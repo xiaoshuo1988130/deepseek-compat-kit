@@ -64,10 +64,11 @@ Compile a Zod/Pydantic/generated JSON Schema into a DeepSeek strict-mode compati
 
 ```bash
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json --check
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json --markdown ./deepseek.schema.report.md
 ```
 
-Use `--dry-run` first to preview planned changes without writing files. The JSON and Markdown reports include removed constraints, a `system_prompt_appendix`, and a `post_validation_plan` for checks that must move back into application code.
+Use `--dry-run` first to preview planned changes without writing files. Use `--check` in CI when schema repairs should fail the job. The JSON and Markdown reports include removed constraints, a `system_prompt_appendix`, and a `post_validation_plan` for checks that must move back into application code.
 
 Probe an official, relay, or self-hosted OpenAI-compatible endpoint:
 

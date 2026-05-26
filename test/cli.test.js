@@ -176,6 +176,66 @@ test("compile-schema dry-run prints repair plan without writing files", () => {
   assert.equal(fs.existsSync(markdownPath), false);
 });
 
+test("compile-schema check fails when schema needs repairs", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const schemaPath = path.join(dir, "schema.json");
+  const outPath = path.join(dir, "deepseek.schema.json");
+  fs.writeFileSync(schemaPath, JSON.stringify({
+    parameters: {
+      type: "object",
+      properties: {
+        username: { type: "string", minLength: 3 },
+      },
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "compile-schema",
+    "-i",
+    schemaPath,
+    "-o",
+    outPath,
+    "--check",
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /compile-schema check; no files written/);
+  assert.match(result.stdout, /REMOVE \$\.properties\.username\.minLength/);
+  assert.match(result.stdout, /ADD \$\.required: username/);
+  assert.match(result.stdout, /SET \$\.additionalProperties: false/);
+  assert.match(result.stdout, /schema requires DeepSeek strict-mode repairs/);
+  assert.equal(fs.existsSync(outPath), false);
+});
+
+test("compile-schema check passes when schema is already compatible", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const schemaPath = path.join(dir, "schema.json");
+  fs.writeFileSync(schemaPath, JSON.stringify({
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  }));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "compile-schema",
+    "-i",
+    schemaPath,
+    "--check",
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /compile-schema check; no files written/);
+  assert.match(result.stdout, /planned_changes:\n- none/);
+  assert.match(result.stdout, /schema already DeepSeek strict-mode compatible/);
+});
+
 test("probe writes endpoint capability report against mock upstream", async (t) => {
   const requestBodies = [];
   const mock = http.createServer((request, response) => {

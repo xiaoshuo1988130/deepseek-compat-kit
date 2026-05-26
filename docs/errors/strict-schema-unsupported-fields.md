@@ -28,10 +28,12 @@ Use `compile-schema` to generate a DeepSeek strict-mode compatible schema and a 
 
 ```bash
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run
+npx deepseek-compat-kit compile-schema -i ./tools.schema.json --check
 npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tools.schema.json --report ./deepseek.schema.report.json --markdown ./deepseek.schema.report.md
 ```
 
 `--dry-run` prints the planned changes and post-validation requirements without writing files.
+`--check` prints the same plan but exits with code `1` when repairs are required, which makes it suitable for CI gates.
 `--markdown` writes a human-readable report that is easier to attach to team handoffs or upstream issues.
 
 The compiler will:

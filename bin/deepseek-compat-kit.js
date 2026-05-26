@@ -12,7 +12,7 @@ const help = `DeepSeek CompatKit
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
-  compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
+  compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
@@ -98,9 +98,10 @@ function compileSchema(args) {
   const reportPath = argValue(args, "--report");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   const dryRun = args.includes("--dry-run");
+  const checkOnly = args.includes("--check");
 
   if (!inputPath) {
-    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]");
+    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]");
     return 2;
   }
 
@@ -111,6 +112,17 @@ function compileSchema(args) {
   if (dryRun) {
     console.log("[deepseek-compat-kit] compile-schema dry run; no files written.");
     printCompilePlan(report);
+    return 0;
+  }
+
+  if (checkOnly) {
+    console.log("[deepseek-compat-kit] compile-schema check; no files written.");
+    printCompilePlan(report);
+    if (hasCompileReportChanges(report)) {
+      console.log("[deepseek-compat-kit] schema requires DeepSeek strict-mode repairs.");
+      return 1;
+    }
+    console.log("[deepseek-compat-kit] schema already DeepSeek strict-mode compatible.");
     return 0;
   }
 
