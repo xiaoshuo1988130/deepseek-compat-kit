@@ -297,6 +297,8 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
     upstreamUrl,
     "--model",
     "mock-model",
+    "--name",
+    "Mock Relay",
     "--profile",
     "relay",
     "--out",
@@ -313,6 +315,7 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(result.stdout, /no immediate capability issues detected/);
 
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.name, "Mock Relay");
   assert.equal(report.profile, "relay");
   assert.equal(report.timeout_ms, 15000);
   assert.equal(report.fail_on_warn, false);
@@ -345,6 +348,7 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /# DeepSeek CompatKit Capability Report/);
+  assert.match(markdown, /Name: `Mock Relay`/);
   assert.match(markdown, /## Execution Context/);
   assert.match(markdown, /API key env: `DEEPSEEK_API_KEY`/);
   assert.match(markdown, /API key present: no/);
@@ -661,6 +665,7 @@ test("matrix summarizes multiple probe reports", () => {
   const markdownPath = path.join(dir, "Provider_Matrix.md");
 
   fs.writeFileSync(officialPath, `${JSON.stringify({
+    name: "Official DeepSeek",
     generated_at: "2026-05-26T00:00:00.000Z",
     endpoint: "https://api.deepseek.com",
     profile: "official",
@@ -716,6 +721,8 @@ test("matrix summarizes multiple probe reports", () => {
   assert.equal(matrix.gate.fail_on_fail, true);
   assert.equal(matrix.gate.fail_on_warn, false);
   assert.equal(matrix.gate.fail_on_regression, false);
+  assert.equal(matrix.reports[0].name, "Official DeepSeek");
+  assert.equal(matrix.reports[1].name, "relay.json");
   assert.equal(matrix.reports[0].capabilities.chat_completions, "MISSING");
   assert.equal(matrix.reports[1].baseline_status, "REGRESSED");
 
@@ -724,7 +731,8 @@ test("matrix summarizes multiple probe reports", () => {
   assert.match(markdown, /Reports: 2/);
   assert.match(markdown, /Regressed: 1/);
   assert.match(markdown, /Fail on fail: yes/);
-  assert.match(markdown, /official\.json/);
+  assert.match(markdown, /Official DeepSeek/);
+  assert.match(markdown, /relay\.json/);
   assert.match(markdown, /relay\.example\.com/);
   assert.match(markdown, /REGRESSED/);
 

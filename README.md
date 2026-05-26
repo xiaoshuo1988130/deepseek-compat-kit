@@ -73,7 +73,7 @@ Use `--dry-run` first to preview planned changes without writing files. Use `--c
 Probe an official, relay, or self-hosted OpenAI-compatible endpoint:
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --api-key-env DEEPSEEK_API_KEY --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --name "Official DeepSeek" --model deepseek-chat --profile official --api-key-env DEEPSEEK_API_KEY --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
 `probe` is a small functional compatibility check, not a benchmark or load test. Use `--profile official`, `--profile relay`, or `--profile self-hosted` to get endpoint-specific guidance in the JSON and Markdown reports.

@@ -16,6 +16,7 @@ It is not a latency benchmark, throughput benchmark, or model quality evaluation
 ```bash
 npx deepseek-compat-kit probe \
   --endpoint https://api.deepseek.com \
+  --name "Official DeepSeek" \
   --model deepseek-chat \
   --profile official \
   --api-key-env DEEPSEEK_API_KEY \
@@ -29,6 +30,7 @@ For a third-party relay:
 ```bash
 npx deepseek-compat-kit probe \
   --endpoint https://relay.example.com/v1 \
+  --name "Example Relay" \
   --model deepseek-chat \
   --profile relay \
   --out ./deepseek-capability-report.json \
@@ -40,6 +42,7 @@ For a local proxy or self-hosted gateway:
 ```bash
 npx deepseek-compat-kit probe \
   --endpoint http://127.0.0.1:8787 \
+  --name "Local Compat Proxy" \
   --model deepseek-chat \
   --profile self-hosted \
   --out ./deepseek-capability-report.json \
@@ -47,6 +50,8 @@ npx deepseek-compat-kit probe \
 ```
 
 `probe` expects a base URL, but it will normalize a common mistake: if `--endpoint` ends with `/chat/completions`, the report records an endpoint diagnostic and sends requests to the corrected base URL.
+
+Use `--name` or `--label` to give the report a human-readable provider name. `matrix` uses this name when generating provider tables.
 
 When `--out` or `--markdown` is used, the terminal also prints a compact summary with overall status, per-capability status, baseline regression status when applicable, and the first warnings or failures that need attention.
 

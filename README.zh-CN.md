@@ -73,7 +73,7 @@ npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tool
 探测官方、中转商或自托管 OpenAI-compatible endpoint 的 Agent 能力：
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --api-key-env DEEPSEEK_API_KEY --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --name "Official DeepSeek" --model deepseek-chat --profile official --api-key-env DEEPSEEK_API_KEY --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
 `probe` 是小请求量的功能兼容性检查，不是压测或模型质量评测。使用 `--profile official`、`--profile relay` 或 `--profile self-hosted` 可以在 JSON 和 Markdown 报告里得到更贴近端点类型的建议。

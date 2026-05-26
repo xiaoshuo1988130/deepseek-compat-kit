@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
+  probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
@@ -424,6 +424,7 @@ function printCompilePlan(report) {
 
 async function probeEndpoint(args) {
   const endpoint = argValue(args, "--endpoint") || argValue(args, "--base-url");
+  const reportName = argValue(args, "--name") || argValue(args, "--label") || "";
   const model = argValue(args, "--model") || "deepseek-chat";
   const profile = normalizeProbeProfile(argValue(args, "--profile") || "openai");
   const outputPath = argValue(args, "--out");
@@ -438,7 +439,7 @@ async function probeEndpoint(args) {
   const failOnRegression = args.includes("--fail-on-regression");
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
     return 2;
   }
   if (!profile) {
@@ -459,6 +460,7 @@ async function probeEndpoint(args) {
   const report = {
     version: "0.1",
     generated_at: new Date().toISOString(),
+    name: reportName || null,
     endpoint_input: endpoint,
     endpoint: baseUrl,
     endpoint_diagnostics: endpointInfo.diagnostics,
@@ -1010,6 +1012,7 @@ function renderProbeMarkdown(report) {
     "# DeepSeek CompatKit Capability Report",
     "",
     `Generated: ${report.generated_at}`,
+    `Name: ${report.name ? `\`${escapeMarkdownTable(report.name)}\`` : "none"}`,
     `Endpoint input: \`${report.endpoint_input}\``,
     `Endpoint: \`${report.endpoint}\``,
     `Profile: \`${report.profile}\``,
@@ -1158,6 +1161,7 @@ function buildProviderMatrix(inputPaths, options = {}) {
     const capabilities = report.summary?.capabilities || {};
     return {
       source: inputPath,
+      name: report.name || path.basename(inputPath),
       generated_at: report.generated_at || null,
       endpoint: report.endpoint || report.endpoint_input || "unknown",
       profile: report.profile || "unknown",
@@ -1219,13 +1223,13 @@ function renderProviderMatrixMarkdown(matrix) {
     "",
     "## Capability Matrix",
     "",
-    "| Source | Endpoint | Profile | Model | Overall | Chat | Streaming | Multi-turn Tools | Strict Schema | Baseline |",
+    "| Name | Endpoint | Profile | Model | Overall | Chat | Streaming | Multi-turn Tools | Strict Schema | Baseline |",
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
 
   for (const report of matrix.reports) {
     lines.push([
-      `\`${escapeMarkdownTable(path.basename(report.source))}\``,
+      `\`${escapeMarkdownTable(report.name)}\``,
       `\`${escapeMarkdownTable(report.endpoint)}\``,
       `\`${escapeMarkdownTable(report.profile)}\``,
       `\`${escapeMarkdownTable(report.model)}\``,
