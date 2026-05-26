@@ -18,6 +18,7 @@ npx deepseek-compat-kit probe \
   --endpoint https://api.deepseek.com \
   --model deepseek-chat \
   --profile official \
+  --timeout-ms 15000 \
   --out ./deepseek-capability-report.json \
   --markdown ./Capability_Report.md
 ```
@@ -46,6 +47,10 @@ npx deepseek-compat-kit probe \
 
 `probe` expects a base URL, but it will normalize a common mistake: if `--endpoint` ends with `/chat/completions`, the report records an endpoint diagnostic and sends requests to the corrected base URL.
 
+Use `--timeout-ms` to cap each probe request. The default is `15000`.
+
+Use `--fail-on-warn` when running in CI and you want warning-level compatibility gaps to return exit code `1`. Without this flag, warnings are reported but the command only fails on failed checks.
+
 ## Profiles
 
 Use `--profile` to tune report guidance:
@@ -72,6 +77,7 @@ The JSON report includes:
 
 - `summary.status`: `PASS`, `WARN`, or `FAIL`.
 - `summary.capabilities`: per-capability status.
+- `timeout_ms` and `fail_on_warn`: execution controls used for this run.
 - `endpoint_input` and `endpoint_diagnostics`: original endpoint plus any normalization warnings.
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.
 - `checks[]`: check-level HTTP status, duration, notes, impact, and recommendation.

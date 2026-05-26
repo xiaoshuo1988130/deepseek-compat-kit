@@ -251,6 +251,8 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
 
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   assert.equal(report.profile, "relay");
+  assert.equal(report.timeout_ms, 15000);
+  assert.equal(report.fail_on_warn, false);
   assert.equal(report.profile_guidance.name, "Third-party relay or API gateway");
   assert.match(report.profile_guidance.strict_schema_hint, /relay preserves DeepSeek strict schema semantics/);
   assert.equal(report.summary.status, "PASS");
@@ -338,6 +340,20 @@ test("probe warns when strict schema response lacks tool calls", async (t) => {
   assert.equal(report.summary.capabilities.strict_schema, "WARN");
   const strictSchemaCheck = report.checks.find((check) => check.name === "strict_schema_request");
   assert.match(strictSchemaCheck.notes.join("\n"), /did not include tool_calls/);
+
+  const strictResult = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--model",
+    "mock-model",
+    "--out",
+    path.join(dir, "strict-capability-report.json"),
+    "--fail-on-warn",
+  ]);
+
+  assert.equal(strictResult.status, 1);
 });
 
 test("probe normalizes full chat completions endpoint URLs", async (t) => {
@@ -421,6 +437,46 @@ test("probe normalizes full chat completions endpoint URLs", async (t) => {
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /## Endpoint Diagnostics/);
   assert.match(markdown, /DSK_PROBE_ENDPOINT_CHAT_COMPLETIONS/);
+});
+
+test("probe times out slow endpoints and validates timeout arguments", async (t) => {
+  const mock = http.createServer((_request, _response) => {
+    // Keep the request open longer than the probe timeout.
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const invalid = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--timeout-ms",
+    "0",
+  ]);
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /positive integer/);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "timeout-report.json");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--timeout-ms",
+    "25",
+    "--out",
+    reportPath,
+  ]);
+
+  assert.equal(result.status, 1);
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.timeout_ms, 25);
+  assert.equal(report.summary.status, "FAIL");
+  assert.equal(report.checks[0].status, "FAIL");
+  assert.match(report.checks[0].notes.join("\n"), /Timed out after 25 ms/);
 });
 
 test("probe rejects unknown profiles before network calls", async () => {

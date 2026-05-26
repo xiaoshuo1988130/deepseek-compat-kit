@@ -72,11 +72,12 @@ npx deepseek-compat-kit compile-schema -i ./tools.schema.json -o ./deepseek.tool
 探测官方、中转商或自托管 OpenAI-compatible endpoint 的 Agent 能力：
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
 `probe` 是小请求量的功能兼容性检查，不是压测或模型质量评测。使用 `--profile official`、`--profile relay` 或 `--profile self-hosted` 可以在 JSON 和 Markdown 报告里得到更贴近端点类型的建议。
 如果误把完整 `/chat/completions` URL 传给 `--endpoint`，`probe` 会自动规整为 base URL，并在报告里记录 endpoint diagnostic。
+如果要在 CI 里把 warning 级别的能力缺口也当成阻断项，可以加 `--fail-on-warn`。
 
 打印一个只读、不改配置的 OpenCode 接入处方：
 

@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--timeout-ms 15000] [--fail-on-warn]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -400,13 +400,20 @@ async function probeEndpoint(args) {
   const profile = normalizeProbeProfile(argValue(args, "--profile") || "openai");
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
+  const failOnWarn = args.includes("--fail-on-warn");
+  const timeoutMsRaw = argValue(args, "--timeout-ms");
+  const timeoutMs = timeoutMsRaw === undefined ? 15000 : Number(timeoutMsRaw);
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--timeout-ms 15000] [--fail-on-warn]");
     return 2;
   }
   if (!profile) {
     console.error("Unknown probe profile. Available profiles: official, openai, relay, self-hosted");
+    return 2;
+  }
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    console.error("--timeout-ms must be a positive integer.");
     return 2;
   }
 
@@ -421,6 +428,8 @@ async function probeEndpoint(args) {
     profile,
     profile_guidance: buildProbeProfileGuidance(profile, baseUrl),
     model,
+    timeout_ms: timeoutMs,
+    fail_on_warn: failOnWarn,
     scope: "functional compatibility probe, not a benchmark",
     checks: [],
     summary: {
@@ -439,6 +448,7 @@ async function probeEndpoint(args) {
     recommendation: "If this fails, verify that the endpoint root is correct, includes the right /v1 prefix, uses a valid API key, and exposes the selected model.",
     request: buildProbeRequest({ model, stream: false }),
     baseUrl,
+    timeoutMs,
   }));
 
   report.checks.push(await runProbeCheck({
@@ -450,6 +460,7 @@ async function probeEndpoint(args) {
     request: buildProbeRequest({ model, stream: true }),
     baseUrl,
     expectStream: true,
+    timeoutMs,
   }));
 
   report.checks.push(await runProbeCheck({
@@ -460,6 +471,7 @@ async function probeEndpoint(args) {
     recommendation: "If this warns or fails, confirm that the framework preserves reasoning_content and that the provider accepts DeepSeek tool-call message history.",
     request: buildMultiTurnToolProbeRequest(model),
     baseUrl,
+    timeoutMs,
   }));
 
   report.checks.push(await runProbeCheck({
@@ -471,6 +483,7 @@ async function probeEndpoint(args) {
     request: buildStrictSchemaProbeRequest(model),
     baseUrl,
     validatePayload: (payload) => validateToolCallPayload(payload, "record_query"),
+    timeoutMs,
   }));
 
   summarizeProbe(report);
@@ -487,7 +500,9 @@ async function probeEndpoint(args) {
     console.log(`[deepseek-compat-kit] wrote markdown capability report: ${markdownPath}`);
   }
 
-  return report.summary.failed > 0 ? 1 : 0;
+  if (report.summary.failed > 0) return 1;
+  if (failOnWarn && report.summary.warned > 0) return 1;
+  return 0;
 }
 
 function normalizeProbeEndpoint(value) {
@@ -700,8 +715,10 @@ function buildStrictSchemaProbeRequest(model) {
   };
 }
 
-async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null }) {
+async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null, timeoutMs = 15000 }) {
   const started = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const check = {
     name,
     capability,
@@ -719,6 +736,7 @@ async function runProbeCheck({ name, capability, description, impact, recommenda
       method: "POST",
       headers: buildProbeHeaders(request),
       body: JSON.stringify(request),
+      signal: controller.signal,
     });
     check.http_status = response.status;
     check.duration_ms = Date.now() - started;
@@ -758,8 +776,10 @@ async function runProbeCheck({ name, capability, description, impact, recommenda
   } catch (error) {
     check.duration_ms = Date.now() - started;
     check.status = "FAIL";
-    check.notes.push(error.message);
+    check.notes.push(error.name === "AbortError" ? `Timed out after ${timeoutMs} ms.` : error.message);
     return check;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
