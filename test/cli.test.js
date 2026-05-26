@@ -718,9 +718,11 @@ test("matrix summarizes multiple probe reports", () => {
   assert.equal(matrix.summary.passed, 1);
   assert.equal(matrix.summary.warned, 1);
   assert.equal(matrix.summary.regressed, 1);
+  assert.equal(matrix.summary.required_failures, 0);
   assert.equal(matrix.gate.fail_on_fail, true);
   assert.equal(matrix.gate.fail_on_warn, false);
   assert.equal(matrix.gate.fail_on_regression, false);
+  assert.deepEqual(matrix.gate.required_capabilities, []);
   assert.equal(matrix.reports[0].name, "Official DeepSeek");
   assert.equal(matrix.reports[1].name, "relay.json");
   assert.equal(matrix.reports[0].capabilities.chat_completions, "MISSING");
@@ -730,7 +732,9 @@ test("matrix summarizes multiple probe reports", () => {
   assert.match(markdown, /# DeepSeek CompatKit Provider Matrix/);
   assert.match(markdown, /Reports: 2/);
   assert.match(markdown, /Regressed: 1/);
+  assert.match(markdown, /Required capability failures: 0/);
   assert.match(markdown, /Fail on fail: yes/);
+  assert.match(markdown, /Required capabilities: none/);
   assert.match(markdown, /Official DeepSeek/);
   assert.match(markdown, /relay\.json/);
   assert.match(markdown, /relay\.example\.com/);
@@ -753,6 +757,34 @@ test("matrix summarizes multiple probe reports", () => {
     "--fail-on-regression",
   ], { encoding: "utf8" });
   assert.equal(regressionGate.status, 1);
+
+  const requirePassPath = path.join(dir, "require-pass.json");
+  const requirePass = spawnSync(process.execPath, [
+    bin,
+    "matrix",
+    officialPath,
+    "--require",
+    "agent",
+    "--out",
+    requirePassPath,
+  ], { encoding: "utf8" });
+  assert.equal(requirePass.status, 0);
+  const requirePassMatrix = JSON.parse(fs.readFileSync(requirePassPath, "utf8"));
+  assert.deepEqual(requirePassMatrix.gate.required_capabilities, ["multi_turn_tool_messages", "strict_schema"]);
+  assert.equal(requirePassMatrix.summary.required_failures, 0);
+
+  const requireGate = spawnSync(process.execPath, [
+    bin,
+    "matrix",
+    officialPath,
+    relayPath,
+    "--require",
+    "agent",
+  ], { encoding: "utf8" });
+  assert.equal(requireGate.status, 1);
+  assert.match(requireGate.stdout, /Required Capability Failures/);
+  assert.match(requireGate.stdout, /relay\.json/);
+  assert.match(requireGate.stdout, /multi_turn_tool_messages/);
 });
 
 test("probe normalizes full chat completions endpoint URLs", async (t) => {

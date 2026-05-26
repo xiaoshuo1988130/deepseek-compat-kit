@@ -8,10 +8,11 @@ Use `matrix` to turn real `probe` JSON reports into a shareable provider matrix:
 
 ```bash
 npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+npx deepseek-compat-kit matrix ./reports/*.json --require agent
 npx deepseek-compat-kit matrix ./reports/*.json --fail-on-warn --fail-on-regression
 ```
 
-The generated matrix is only as strong as the probe reports supplied to it. Keep the original JSON reports as the source of truth for issue triage and regression review. Use `--fail-on-fail`, `--fail-on-warn`, or `--fail-on-regression` when the matrix should act as a CI gate.
+The generated matrix is only as strong as the probe reports supplied to it. Keep the original JSON reports as the source of truth for issue triage and regression review. Use `--require agent`, `--require basic`, or a comma-separated capability list when specific capabilities must pass on every supplied report. Use `--fail-on-fail`, `--fail-on-warn`, or `--fail-on-regression` when the matrix should act as a CI gate.
 
 | Target | Mode | Status | Notes |
 | --- | --- | --- | --- |

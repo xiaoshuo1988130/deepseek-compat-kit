@@ -87,6 +87,7 @@ Summarize multiple probe reports into a provider matrix:
 
 ```bash
 npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+npx deepseek-compat-kit matrix ./reports/*.json --require agent
 npx deepseek-compat-kit matrix ./reports/*.json --fail-on-warn --fail-on-regression
 ```
 

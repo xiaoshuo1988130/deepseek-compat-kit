@@ -14,7 +14,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]
   probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
-  matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]
+  matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--require all|basic|agent|a,b] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -1122,17 +1122,23 @@ function escapeMarkdownTable(value) {
 function providerMatrix(args) {
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
-  const inputPaths = positionalArgs(args, ["--out", "--markdown", "--out-md"]);
+  const inputPaths = positionalArgs(args, ["--out", "--markdown", "--out-md", "--require", "--require-capabilities"]);
+  const requiredCapabilitiesRaw = argValue(args, "--require") || argValue(args, "--require-capabilities");
+  const requiredCapabilities = requiredCapabilitiesRaw ? parseProbeChecks(requiredCapabilitiesRaw) : [];
   const failOnFail = args.includes("--fail-on-fail");
   const failOnWarn = args.includes("--fail-on-warn");
   const failOnRegression = args.includes("--fail-on-regression");
 
   if (inputPaths.length === 0) {
-    console.error("Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]");
+    console.error("Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--require all|basic|agent|a,b] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]");
+    return 2;
+  }
+  if (requiredCapabilitiesRaw && !requiredCapabilities) {
+    console.error(`Unknown matrix required capability. Available values: all, basic, agent, ${availableProbeCheckCapabilities().join(", ")}`);
     return 2;
   }
 
-  const matrix = buildProviderMatrix(inputPaths, { failOnFail, failOnWarn, failOnRegression });
+  const matrix = buildProviderMatrix(inputPaths, { failOnFail, failOnWarn, failOnRegression, requiredCapabilities });
   const markdown = renderProviderMatrixMarkdown(matrix);
 
   if (outputPath) {
@@ -1150,6 +1156,7 @@ function providerMatrix(args) {
   }
 
   if (failOnRegression && matrix.summary.regressed > 0) return 1;
+  if (matrix.summary.required_failures > 0) return 1;
   if (failOnFail && matrix.summary.failed > 0) return 1;
   if (failOnWarn && (matrix.summary.warned > 0 || matrix.summary.failed > 0)) return 1;
   return 0;
@@ -1159,6 +1166,19 @@ function buildProviderMatrix(inputPaths, options = {}) {
   const reports = inputPaths.map((inputPath) => {
     const report = readJson(inputPath);
     const capabilities = report.summary?.capabilities || {};
+    const normalizedCapabilities = {
+      chat_completions: capabilities.chat_completions || "MISSING",
+      streaming: capabilities.streaming || "MISSING",
+      multi_turn_tool_messages: capabilities.multi_turn_tool_messages || "MISSING",
+      strict_schema: capabilities.strict_schema || "MISSING",
+    };
+    const requiredFailures = (options.requiredCapabilities || [])
+      .filter((capability) => normalizedCapabilities[capability] !== "PASS")
+      .map((capability) => ({
+        capability,
+        status: normalizedCapabilities[capability] || "MISSING",
+      }));
+
     return {
       source: inputPath,
       name: report.name || path.basename(inputPath),
@@ -1168,12 +1188,8 @@ function buildProviderMatrix(inputPaths, options = {}) {
       model: report.model || "unknown",
       checks_requested: report.checks_requested || Object.keys(capabilities),
       status: report.summary?.status || "UNKNOWN",
-      capabilities: {
-        chat_completions: capabilities.chat_completions || "MISSING",
-        streaming: capabilities.streaming || "MISSING",
-        multi_turn_tool_messages: capabilities.multi_turn_tool_messages || "MISSING",
-        strict_schema: capabilities.strict_schema || "MISSING",
-      },
+      capabilities: normalizedCapabilities,
+      required_failures: requiredFailures,
       baseline_status: report.baseline?.status || "none",
     };
   });
@@ -1185,6 +1201,7 @@ function buildProviderMatrix(inputPaths, options = {}) {
     failed: reports.filter((report) => report.status === "FAIL").length,
     unknown: reports.filter((report) => !["PASS", "WARN", "FAIL"].includes(report.status)).length,
     regressed: reports.filter((report) => report.baseline_status === "REGRESSED").length,
+    required_failures: reports.reduce((total, report) => total + report.required_failures.length, 0),
   };
 
   return {
@@ -1194,6 +1211,7 @@ function buildProviderMatrix(inputPaths, options = {}) {
       fail_on_fail: Boolean(options.failOnFail),
       fail_on_warn: Boolean(options.failOnWarn),
       fail_on_regression: Boolean(options.failOnRegression),
+      required_capabilities: options.requiredCapabilities || [],
     },
     summary,
     reports,
@@ -1214,12 +1232,14 @@ function renderProviderMatrixMarkdown(matrix) {
     `Failed: ${matrix.summary.failed}`,
     `Unknown: ${matrix.summary.unknown}`,
     `Regressed: ${matrix.summary.regressed}`,
+    `Required capability failures: ${matrix.summary.required_failures}`,
     "",
     "## Gate",
     "",
     `Fail on fail: ${matrix.gate.fail_on_fail ? "yes" : "no"}`,
     `Fail on warn: ${matrix.gate.fail_on_warn ? "yes" : "no"}`,
     `Fail on regression: ${matrix.gate.fail_on_regression ? "yes" : "no"}`,
+    `Required capabilities: ${renderInlineCodeList(matrix.gate.required_capabilities)}`,
     "",
     "## Capability Matrix",
     "",
@@ -1240,6 +1260,17 @@ function renderProviderMatrixMarkdown(matrix) {
       report.capabilities.strict_schema,
       report.baseline_status,
     ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+
+  const requiredFailures = matrix.reports.filter((report) => report.required_failures.length > 0);
+  if (requiredFailures.length > 0) {
+    lines.push("", "## Required Capability Failures", "");
+    lines.push("| Name | Capability | Status |", "| --- | --- | --- |");
+    for (const report of requiredFailures) {
+      for (const failure of report.required_failures) {
+        lines.push(`| \`${escapeMarkdownTable(report.name)}\` | \`${escapeMarkdownTable(failure.capability)}\` | ${failure.status} |`);
+      }
+    }
   }
 
   lines.push(
