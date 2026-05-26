@@ -653,6 +653,75 @@ test("probe compares against a baseline report and can fail on regression", asyn
   assert.equal(gated.status, 1);
 });
 
+test("matrix summarizes multiple probe reports", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const officialPath = path.join(dir, "official.json");
+  const relayPath = path.join(dir, "relay.json");
+  const matrixPath = path.join(dir, "matrix.json");
+  const markdownPath = path.join(dir, "Provider_Matrix.md");
+
+  fs.writeFileSync(officialPath, `${JSON.stringify({
+    generated_at: "2026-05-26T00:00:00.000Z",
+    endpoint: "https://api.deepseek.com",
+    profile: "official",
+    model: "deepseek-chat",
+    checks_requested: ["agent"],
+    summary: {
+      status: "PASS",
+      capabilities: {
+        multi_turn_tool_messages: "PASS",
+        strict_schema: "PASS",
+      },
+    },
+  }, null, 2)}\n`);
+
+  fs.writeFileSync(relayPath, `${JSON.stringify({
+    generated_at: "2026-05-26T00:05:00.000Z",
+    endpoint: "https://relay.example.com/v1",
+    profile: "relay",
+    model: "deepseek-chat",
+    summary: {
+      status: "WARN",
+      capabilities: {
+        chat_completions: "PASS",
+        streaming: "WARN",
+      },
+    },
+    baseline: {
+      status: "REGRESSED",
+    },
+  }, null, 2)}\n`);
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "matrix",
+    officialPath,
+    relayPath,
+    "--out",
+    matrixPath,
+    "--markdown",
+    markdownPath,
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /wrote provider matrix/);
+  assert.match(result.stdout, /wrote markdown provider matrix/);
+
+  const matrix = JSON.parse(fs.readFileSync(matrixPath, "utf8"));
+  assert.equal(matrix.summary.reports, 2);
+  assert.equal(matrix.summary.passed, 1);
+  assert.equal(matrix.summary.warned, 1);
+  assert.equal(matrix.reports[0].capabilities.chat_completions, "MISSING");
+  assert.equal(matrix.reports[1].baseline_status, "REGRESSED");
+
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert.match(markdown, /# DeepSeek CompatKit Provider Matrix/);
+  assert.match(markdown, /Reports: 2/);
+  assert.match(markdown, /official\.json/);
+  assert.match(markdown, /relay\.example\.com/);
+  assert.match(markdown, /REGRESSED/);
+});
+
 test("probe normalizes full chat completions endpoint URLs", async (t) => {
   const seenPaths = [];
   const mock = http.createServer((request, response) => {

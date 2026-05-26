@@ -4,6 +4,14 @@ Early status for DeepSeek CompatKit.
 
 Live DeepSeek regression tests are pending. Current proxy and probe behavior are validated against the repository mock upstream and local unit tests.
 
+Use `matrix` to turn real `probe` JSON reports into a shareable provider matrix:
+
+```bash
+npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+```
+
+The generated matrix is only as strong as the probe reports supplied to it. Keep the original JSON reports as the source of truth for issue triage and regression review.
+
 | Target | Mode | Status | Notes |
 | --- | --- | --- | --- |
 | Official DeepSeek API | OpenAI-compatible `/chat/completions` | ALPHA | non-streaming tested through local mock upstream |

@@ -14,6 +14,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
+  matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -43,6 +44,7 @@ function main() {
   if (command === "lint-schema") return lintSchema(args);
   if (command === "compile-schema") return compileSchema(args);
   if (command === "probe") return probeEndpoint(args);
+  if (command === "matrix") return providerMatrix(args);
   if (command === "inventory") return inventory(args);
   if (command === "doctor") return doctor(args);
   if (command === "recipes") return recipes(args);
@@ -90,6 +92,20 @@ function argValue(args, name) {
 
 function firstPositional(args) {
   return args.find((arg, index) => !arg.startsWith("-") && !args[index - 1]?.startsWith("--"));
+}
+
+function positionalArgs(args, valueOptions = []) {
+  const values = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (valueOptions.includes(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    values.push(arg);
+  }
+  return values;
 }
 
 function compileSchema(args) {
@@ -1098,6 +1114,122 @@ function renderInlineCodeList(items) {
 
 function escapeMarkdownTable(value) {
   return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+}
+
+function providerMatrix(args) {
+  const outputPath = argValue(args, "--out");
+  const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
+  const inputPaths = positionalArgs(args, ["--out", "--markdown", "--out-md"]);
+
+  if (inputPaths.length === 0) {
+    console.error("Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>]");
+    return 2;
+  }
+
+  const matrix = buildProviderMatrix(inputPaths);
+  const markdown = renderProviderMatrixMarkdown(matrix);
+
+  if (outputPath) {
+    fs.writeFileSync(path.resolve(outputPath), `${JSON.stringify(matrix, null, 2)}\n`);
+    console.log(`[deepseek-compat-kit] wrote provider matrix: ${outputPath}`);
+  }
+
+  if (markdownPath) {
+    fs.writeFileSync(path.resolve(markdownPath), markdown);
+    console.log(`[deepseek-compat-kit] wrote markdown provider matrix: ${markdownPath}`);
+  }
+
+  if (!outputPath && !markdownPath) {
+    process.stdout.write(markdown);
+  }
+
+  return 0;
+}
+
+function buildProviderMatrix(inputPaths) {
+  const reports = inputPaths.map((inputPath) => {
+    const report = readJson(inputPath);
+    const capabilities = report.summary?.capabilities || {};
+    return {
+      source: inputPath,
+      generated_at: report.generated_at || null,
+      endpoint: report.endpoint || report.endpoint_input || "unknown",
+      profile: report.profile || "unknown",
+      model: report.model || "unknown",
+      checks_requested: report.checks_requested || Object.keys(capabilities),
+      status: report.summary?.status || "UNKNOWN",
+      capabilities: {
+        chat_completions: capabilities.chat_completions || "MISSING",
+        streaming: capabilities.streaming || "MISSING",
+        multi_turn_tool_messages: capabilities.multi_turn_tool_messages || "MISSING",
+        strict_schema: capabilities.strict_schema || "MISSING",
+      },
+      baseline_status: report.baseline?.status || "none",
+    };
+  });
+
+  const summary = {
+    reports: reports.length,
+    passed: reports.filter((report) => report.status === "PASS").length,
+    warned: reports.filter((report) => report.status === "WARN").length,
+    failed: reports.filter((report) => report.status === "FAIL").length,
+    unknown: reports.filter((report) => !["PASS", "WARN", "FAIL"].includes(report.status)).length,
+  };
+
+  return {
+    version: "0.1",
+    generated_at: new Date().toISOString(),
+    summary,
+    reports,
+  };
+}
+
+function renderProviderMatrixMarkdown(matrix) {
+  const lines = [
+    "# DeepSeek CompatKit Provider Matrix",
+    "",
+    `Generated: ${matrix.generated_at}`,
+    "",
+    "## Summary",
+    "",
+    `Reports: ${matrix.summary.reports}`,
+    `Passed: ${matrix.summary.passed}`,
+    `Warned: ${matrix.summary.warned}`,
+    `Failed: ${matrix.summary.failed}`,
+    `Unknown: ${matrix.summary.unknown}`,
+    "",
+    "## Capability Matrix",
+    "",
+    "| Source | Endpoint | Profile | Model | Overall | Chat | Streaming | Multi-turn Tools | Strict Schema | Baseline |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+  ];
+
+  for (const report of matrix.reports) {
+    lines.push([
+      `\`${escapeMarkdownTable(path.basename(report.source))}\``,
+      `\`${escapeMarkdownTable(report.endpoint)}\``,
+      `\`${escapeMarkdownTable(report.profile)}\``,
+      `\`${escapeMarkdownTable(report.model)}\``,
+      report.status,
+      report.capabilities.chat_completions,
+      report.capabilities.streaming,
+      report.capabilities.multi_turn_tool_messages,
+      report.capabilities.strict_schema,
+      report.baseline_status,
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"));
+  }
+
+  lines.push(
+    "",
+    "## Boundary",
+    "",
+    "- This matrix only summarizes probe reports that were explicitly provided to the command.",
+    "- A PASS entry means the endpoint passed the small functional checks in that report, not a full benchmark or framework certification.",
+    "- Keep the original JSON probe reports as the source of truth for issue triage and regression review.",
+    "",
+  );
+
+  return `${lines.join("\n")}\n`;
 }
 
 function inventory(args) {

@@ -83,6 +83,12 @@ Use `--fail-on-warn` in CI when warning-level capability gaps should block adopt
 Use `--checks agent` for a focused, lower-cost CI gate that covers multi-turn tool messages and strict schemas. Use `--checks basic` for chat and streaming only.
 Use `--baseline ./previous-report.json --fail-on-regression` to catch endpoint capability regressions after provider or gateway changes.
 
+Summarize multiple probe reports into a provider matrix:
+
+```bash
+npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+```
+
 Print a no-write OpenCode setup recipe:
 
 ```bash

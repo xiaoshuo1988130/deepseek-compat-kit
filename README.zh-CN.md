@@ -83,6 +83,12 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 如果只想做更低成本的 CI 门禁，可以用 `--checks agent` 聚焦多轮工具消息和 strict schema；如果只想检查基础连通和流式响应，可以用 `--checks basic`。
 如果要防止 provider 或网关升级后能力退化，可以用 `--baseline ./previous-report.json --fail-on-regression` 做回归门禁。
 
+把多份 probe 报告汇总成 provider matrix：
+
+```bash
+npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+```
+
 打印一个只读、不改配置的 OpenCode 接入处方：
 
 ```bash
