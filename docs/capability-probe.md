@@ -63,6 +63,7 @@ Use `--profile` to tune report guidance:
 | --- | --- | --- |
 | `chat_completions` | Minimal non-streaming `POST /chat/completions` | Verifies the basic OpenAI-compatible request path. |
 | `streaming` | `stream: true` with event-stream-like response | Verifies whether streaming clients can parse incremental responses. |
+| `multi_turn_tool_messages` | Follow-up request containing assistant `tool_calls`, `reasoning_content`, and a matching `tool` result | Verifies whether Agent loops can pass DeepSeek reasoning content back through multi-turn tool-call history. |
 | `strict_schema` | Minimal strict tool schema request | Verifies whether tool-calling agents can send DeepSeek strict-mode compatible schemas. |
 
 ## Reading the Report
@@ -91,6 +92,12 @@ If `streaming` warns or fails:
 - Disable streaming while triaging the provider.
 - Check whether a relay buffers responses instead of returning `text/event-stream`.
 - Re-run the probe after changing provider settings.
+
+If `multi_turn_tool_messages` warns or fails:
+
+- Confirm that the framework preserves `reasoning_content` from the previous assistant tool-call turn.
+- Confirm that the provider accepts assistant messages containing both `tool_calls` and `reasoning_content`.
+- Re-run the same probe directly against the official DeepSeek endpoint to separate framework, relay, and self-hosted endpoint behavior.
 
 If `strict_schema` warns or fails:
 

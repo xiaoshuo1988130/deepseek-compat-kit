@@ -177,8 +177,10 @@ test("compile-schema dry-run prints repair plan without writing files", () => {
 });
 
 test("probe writes endpoint capability report against mock upstream", async (t) => {
+  const requestBodies = [];
   const mock = http.createServer((request, response) => {
     collectRequestJson(request).then((body) => {
+      requestBodies.push(body);
       const pathname = new URL(request.url, "http://127.0.0.1").pathname;
       if (request.method !== "POST" || pathname !== "/chat/completions") {
         response.writeHead(404, { "content-type": "application/json" });
@@ -232,23 +234,29 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.equal(report.profile_guidance.name, "Third-party relay or API gateway");
   assert.match(report.profile_guidance.strict_schema_hint, /relay preserves DeepSeek strict schema semantics/);
   assert.equal(report.summary.status, "PASS");
-  assert.equal(report.summary.passed, 3);
+  assert.equal(report.summary.passed, 4);
   assert.deepEqual(report.summary.capabilities, {
     chat_completions: "PASS",
     streaming: "PASS",
+    multi_turn_tool_messages: "PASS",
     strict_schema: "PASS",
   });
   assert.deepEqual(report.checks.map((check) => check.name), [
     "chat_completions",
     "streaming",
+    "multi_turn_tool_messages",
     "strict_schema_request",
   ]);
   assert.deepEqual(report.checks.map((check) => check.capability), [
     "chat_completions",
     "streaming",
+    "multi_turn_tool_messages",
     "strict_schema",
   ]);
-  assert.match(report.checks[2].recommendation, /compile-schema/);
+  assert.match(report.checks[2].recommendation, /reasoning_content/);
+  assert.match(report.checks[3].recommendation, /compile-schema/);
+  assert.ok(requestBodies.some((body) => body.messages?.some((message) => message.reasoning_content)));
+  assert.ok(requestBodies.some((body) => body.messages?.some((message) => message.role === "tool" && message.tool_call_id === "call_probe_weather")));
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /# DeepSeek CompatKit Capability Report/);
@@ -256,6 +264,7 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(markdown, /Third-party relay or API gateway/);
   assert.match(markdown, /Status: \*\*PASS\*\*/);
   assert.match(markdown, /\| `chat_completions` \| `chat_completions` \| PASS \| 200 \|/);
+  assert.match(markdown, /\| `multi_turn_tool_messages` \| `multi_turn_tool_messages` \| PASS \| 200 \|/);
   assert.match(markdown, /## Recommendations/);
   assert.match(markdown, /No immediate compatibility issues/);
 });

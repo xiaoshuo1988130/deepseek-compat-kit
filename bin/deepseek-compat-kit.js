@@ -453,6 +453,16 @@ async function probeEndpoint(args) {
   }));
 
   report.checks.push(await runProbeCheck({
+    name: "multi_turn_tool_messages",
+    capability: "multi_turn_tool_messages",
+    description: "Endpoint accepts a follow-up request containing assistant tool_calls, reasoning_content, and tool results.",
+    impact: "Multi-turn tool-calling agents can pass DeepSeek reasoning_content back alongside tool results.",
+    recommendation: "If this warns or fails, confirm that the framework preserves reasoning_content and that the provider accepts DeepSeek tool-call message history.",
+    request: buildMultiTurnToolProbeRequest(model),
+    baseUrl,
+  }));
+
+  report.checks.push(await runProbeCheck({
     name: "strict_schema_request",
     capability: "strict_schema",
     description: "Endpoint accepts a minimal strict tool schema request.",
@@ -605,6 +615,53 @@ function buildProbeRequest({ model, stream }) {
       { role: "user", content: "Reply with exactly: ok" },
     ],
     stream,
+    max_tokens: 8,
+  };
+}
+
+function buildMultiTurnToolProbeRequest(model) {
+  return {
+    model,
+    messages: [
+      { role: "user", content: "Use the weather tool for Paris." },
+      {
+        role: "assistant",
+        content: null,
+        reasoning_content: "I need to call the weather tool before answering.",
+        tool_calls: [{
+          id: "call_probe_weather",
+          type: "function",
+          function: {
+            name: "get_weather",
+            arguments: "{\"city\":\"Paris\"}",
+          },
+        }],
+      },
+      {
+        role: "tool",
+        tool_call_id: "call_probe_weather",
+        content: "{\"city\":\"Paris\",\"weather\":\"sunny\"}",
+      },
+      { role: "user", content: "Reply with exactly: ok" },
+    ],
+    tools: [{
+      type: "function",
+      function: {
+        name: "get_weather",
+        description: "Return simple weather data for a city.",
+        parameters: {
+          type: "object",
+          properties: {
+            city: {
+              type: "string",
+              description: "City name.",
+            },
+          },
+          required: ["city"],
+          additionalProperties: false,
+        },
+      },
+    }],
     max_tokens: 8,
   };
 }
