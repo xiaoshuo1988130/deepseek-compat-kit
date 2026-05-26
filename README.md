@@ -80,11 +80,12 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 Print a no-write OpenCode setup recipe:
 
 ```bash
+npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
 npx deepseek-compat-kit doctor --target opencode --print
 npx deepseek-compat-kit recipes opencode
 ```
 
-The doctor path is intentionally conservative: it prints a configuration prescription and does not scan or modify local OpenCode files.
+The inventory and doctor paths are intentionally conservative: they scan only the explicit local path, redact secret values, print configuration prescriptions, and do not modify local tool files.
 
 The proxy forwards to `https://api.deepseek.com` by default. For tests or self-hosted gateways:
 
@@ -150,6 +151,7 @@ Initial proxy scope:
 - [Strict schema unsupported fields](docs/errors/strict-schema-unsupported-fields.md)
 - [GitHub issue triage guide](docs/github-issue-triage.md)
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
+- [Adoption doctor and inventory](docs/adoption-doctor.md)
 - [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.1 release notes](docs/releases/v0.1.1.md)

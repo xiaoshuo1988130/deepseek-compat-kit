@@ -13,6 +13,12 @@ Status: configuration recipe only. Live OpenCode end-to-end validation is pendin
 
 ## Recipe
 
+Optionally inventory the current project first:
+
+```bash
+npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
+```
+
 Start the local compatibility proxy:
 
 ```bash

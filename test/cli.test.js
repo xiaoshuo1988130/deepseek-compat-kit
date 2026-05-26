@@ -224,6 +224,53 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(markdown, /\| `chat_completions` \| PASS \| 200 \|/);
 });
 
+test("inventory reports DeepSeek hints without leaking secret values", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "inventory.json");
+  const markdownPath = path.join(dir, "inventory.md");
+  fs.mkdirSync(path.join(dir, "node_modules"));
+  fs.writeFileSync(path.join(dir, "node_modules", "ignored.js"), "const model = 'deepseek-ignored';\n");
+  fs.writeFileSync(path.join(dir, ".env"), [
+    "DEEPSEEK_API_KEY=sk-supersecretvalue1234567890",
+    "OPENAI_API_KEY=sk-anothersecretvalue1234567890",
+  ].join("\n"));
+  fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify({
+    model: "deepseek-chat",
+    baseURL: "http://127.0.0.1:8787/v1",
+  }, null, 2));
+
+  const result = spawnSync(process.execPath, [
+    bin,
+    "inventory",
+    "--path",
+    dir,
+    "--out",
+    reportPath,
+    "--markdown",
+    markdownPath,
+  ], { encoding: "utf8" });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /wrote inventory report/);
+  assert.match(result.stdout, /wrote markdown inventory report/);
+
+  const reportText = fs.readFileSync(reportPath, "utf8");
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert.doesNotMatch(reportText, /supersecretvalue/);
+  assert.doesNotMatch(markdown, /supersecretvalue/);
+  assert.doesNotMatch(reportText, /anothersecretvalue/);
+  assert.match(reportText, /DSK_INV_SECRET_PRESENT/);
+  assert.match(reportText, /DSK_INV_BASE_URL/);
+  assert.match(reportText, /deepseek-chat/);
+  assert.doesNotMatch(reportText, /deepseek-ignored/);
+
+  const report = JSON.parse(reportText);
+  assert.equal(report.summary.warnings, 4);
+  assert.equal(report.summary.base_urls, 1);
+  assert.equal(report.summary.models, 1);
+  assert.match(markdown, /# DeepSeek CompatKit Inventory Report/);
+});
+
 test("recipes lists and prints the OpenCode recipe", () => {
   const list = spawnSync(process.execPath, [bin, "recipes"], { encoding: "utf8" });
   assert.equal(list.status, 0);

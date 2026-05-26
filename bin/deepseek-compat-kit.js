@@ -14,6 +14,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
+  inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target opencode --print
   recipes [opencode]
   lint-schema <schema.json> [--strict] [--base-url <url>]
@@ -42,6 +43,7 @@ function main() {
   if (command === "lint-schema") return lintSchema(args);
   if (command === "compile-schema") return compileSchema(args);
   if (command === "probe") return probeEndpoint(args);
+  if (command === "inventory") return inventory(args);
   if (command === "doctor") return doctor(args);
   if (command === "recipes") return recipes(args);
   if (command === "diagnose") return diagnose(args);
@@ -525,6 +527,290 @@ function renderProbeMarkdown(report) {
 
 function escapeMarkdownTable(value) {
   return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
+}
+
+function inventory(args) {
+  const rootArg = argValue(args, "--path") || argValue(args, "-p") || firstPositional(args) || process.cwd();
+  const outputPath = argValue(args, "--out");
+  const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
+  const root = path.resolve(rootArg);
+
+  if (!fs.existsSync(root)) {
+    console.error(`Inventory path does not exist: ${root}`);
+    return 2;
+  }
+
+  const report = createInventoryReport(root);
+  const files = collectInventoryFiles(root);
+  report.summary.files_scanned = files.length;
+
+  for (const filePath of files) {
+    inspectInventoryFile(filePath, root, report);
+  }
+
+  summarizeInventory(report);
+  const json = `${JSON.stringify(report, null, 2)}\n`;
+  if (outputPath) {
+    fs.writeFileSync(path.resolve(outputPath), json);
+    console.log(`[deepseek-compat-kit] wrote inventory report: ${outputPath}`);
+  } else {
+    process.stdout.write(json);
+  }
+
+  if (markdownPath) {
+    fs.writeFileSync(path.resolve(markdownPath), renderInventoryMarkdown(report));
+    console.log(`[deepseek-compat-kit] wrote markdown inventory report: ${markdownPath}`);
+  }
+
+  return 0;
+}
+
+function createInventoryReport(root) {
+  return {
+    version: "0.1",
+    generated_at: new Date().toISOString(),
+    root,
+    scope: "explicit local path only; no network calls; secret values are not recorded",
+    summary: {
+      files_scanned: 0,
+      findings: 0,
+      warnings: 0,
+      deepseek_references: 0,
+      base_urls: 0,
+      models: 0,
+    },
+    findings: [],
+  };
+}
+
+function collectInventoryFiles(root) {
+  const files = [];
+  const rootStat = fs.statSync(root);
+  if (rootStat.isFile()) return shouldScanInventoryFile(root) ? [root] : [];
+
+  const stack = [root];
+  const maxFiles = 500;
+  while (stack.length > 0 && files.length < maxFiles) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!shouldSkipInventoryDirectory(entry.name)) stack.push(fullPath);
+        continue;
+      }
+
+      if (entry.isFile() && shouldScanInventoryFile(fullPath)) {
+        files.push(fullPath);
+        if (files.length >= maxFiles) break;
+      }
+    }
+  }
+
+  return files;
+}
+
+function shouldSkipInventoryDirectory(name) {
+  return [
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".next",
+    ".cache",
+    "vendor",
+  ].includes(name);
+}
+
+function shouldScanInventoryFile(filePath) {
+  const base = path.basename(filePath);
+  if (base.startsWith(".env")) return true;
+  if (["package.json", "wrangler.toml", "opencode.json"].includes(base)) return true;
+  const ext = path.extname(filePath).toLowerCase();
+  return [
+    ".json",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".md",
+  ].includes(ext);
+}
+
+function inspectInventoryFile(filePath, root, report) {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch {
+    return;
+  }
+
+  if (stat.size > 256 * 1024) return;
+
+  let text;
+  try {
+    text = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return;
+  }
+
+  const relativePath = path.relative(root, filePath) || path.basename(filePath);
+  const lines = text.split(/\r?\n/);
+  lines.forEach((line, index) => inspectInventoryLine(line, index + 1, relativePath, report));
+}
+
+function inspectInventoryLine(line, lineNumber, filePath, report) {
+  const lowered = line.toLowerCase();
+  if (lowered.includes("deepseek")) {
+    addInventoryFinding(report, {
+      level: "INFO",
+      code: "DSK_INV_DEEPSEEK_REFERENCE",
+      file: filePath,
+      line: lineNumber,
+      message: "DeepSeek reference found.",
+    });
+  }
+
+  for (const url of extractInventoryUrls(line)) {
+    addInventoryFinding(report, {
+      level: "INFO",
+      code: "DSK_INV_BASE_URL",
+      file: filePath,
+      line: lineNumber,
+      value: url,
+      message: "Provider or proxy base URL candidate found.",
+    });
+  }
+
+  for (const model of extractInventoryModels(line)) {
+    addInventoryFinding(report, {
+      level: "INFO",
+      code: "DSK_INV_MODEL",
+      file: filePath,
+      line: lineNumber,
+      value: model,
+      message: "DeepSeek model reference found.",
+    });
+  }
+
+  const envSecret = detectInventoryEnvSecret(line);
+  if (envSecret) {
+    addInventoryFinding(report, {
+      level: "WARN",
+      code: "DSK_INV_SECRET_PRESENT",
+      file: filePath,
+      line: lineNumber,
+      variable: envSecret,
+      message: `Potential secret value assigned to ${envSecret}; value redacted.`,
+    });
+  }
+
+  if (containsRawSecret(line)) {
+    addInventoryFinding(report, {
+      level: "WARN",
+      code: "DSK_INV_RAW_SECRET",
+      file: filePath,
+      line: lineNumber,
+      message: "Potential raw API key or bearer token found; value redacted.",
+    });
+  }
+}
+
+function extractInventoryUrls(line) {
+  const urls = [];
+  for (const match of line.matchAll(/https?:\/\/[^\s"'`,)<>{}\\]+/g)) {
+    const url = match[0].replace(/[.;]+$/, "");
+    const lowered = url.toLowerCase();
+    if (lowered.includes("deepseek") || lowered.includes("127.0.0.1:8787") || lowered.includes("localhost:8787")) {
+      urls.push(url);
+    }
+  }
+  return [...new Set(urls)];
+}
+
+function extractInventoryModels(line) {
+  return [...new Set(Array.from(line.matchAll(/\bdeepseek-[a-z0-9._-]+\b/gi), (match) => match[0]))];
+}
+
+function detectInventoryEnvSecret(line) {
+  const match = line.match(/^\s*([A-Z0-9_]*(?:DEEPSEEK|OPENAI)[A-Z0-9_]*(?:KEY|TOKEN|SECRET)|(?:DEEPSEEK|OPENAI)_API_KEY)\s*=\s*(.+?)\s*$/i);
+  if (!match) return undefined;
+  const value = match[2].replace(/^['"]|['"]$/g, "").trim();
+  if (!value || /^(your_|sk-\.\.\.|<|xxx|changeme|example|placeholder)/i.test(value)) return undefined;
+  return match[1];
+}
+
+function containsRawSecret(line) {
+  return /(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/=-]{12,})/.test(line);
+}
+
+function addInventoryFinding(report, finding) {
+  report.findings.push(finding);
+}
+
+function summarizeInventory(report) {
+  report.summary.findings = report.findings.length;
+  report.summary.warnings = report.findings.filter((finding) => finding.level === "WARN").length;
+  report.summary.deepseek_references = report.findings.filter((finding) => finding.code === "DSK_INV_DEEPSEEK_REFERENCE").length;
+  report.summary.base_urls = report.findings.filter((finding) => finding.code === "DSK_INV_BASE_URL").length;
+  report.summary.models = report.findings.filter((finding) => finding.code === "DSK_INV_MODEL").length;
+}
+
+function renderInventoryMarkdown(report) {
+  const lines = [
+    "# DeepSeek CompatKit Inventory Report",
+    "",
+    `Generated: ${report.generated_at}`,
+    `Root: \`${report.root}\``,
+    `Scope: ${report.scope}`,
+    "",
+    "## Summary",
+    "",
+    `Files scanned: ${report.summary.files_scanned}`,
+    `Findings: ${report.summary.findings}`,
+    `Warnings: ${report.summary.warnings}`,
+    `DeepSeek references: ${report.summary.deepseek_references}`,
+    `Base URLs: ${report.summary.base_urls}`,
+    `Models: ${report.summary.models}`,
+    "",
+    "## Findings",
+    "",
+    "| Level | Code | File | Line | Detail |",
+    "| --- | --- | --- | --- | --- |",
+  ];
+
+  if (report.findings.length === 0) {
+    lines.push("| INFO | DSK_INV_EMPTY |  |  | No DeepSeek inventory findings in the scanned path. |");
+  } else {
+    for (const finding of report.findings) {
+      const detail = finding.value || finding.variable || finding.message;
+      lines.push(`| ${finding.level} | \`${finding.code}\` | \`${escapeMarkdownTable(finding.file)}\` | ${finding.line} | ${escapeMarkdownTable(detail)} |`);
+    }
+  }
+
+  lines.push(
+    "",
+    "## Boundary",
+    "",
+    "- Inventory scans only the explicit local path you provide.",
+    "- Secret values are never recorded; only variable names and file locations are reported.",
+    "- This is a heuristic adoption report, not proof that a provider configuration is valid.",
+    "",
+  );
+
+  return `${lines.join("\n")}\n`;
 }
 
 function recipes(args) {
