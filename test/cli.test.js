@@ -244,6 +244,69 @@ test("probe writes endpoint capability report against mock upstream", async (t) 
   assert.match(markdown, /No immediate compatibility issues/);
 });
 
+test("probe normalizes full chat completions endpoint URLs", async (t) => {
+  const seenPaths = [];
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then(() => {
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      seenPaths.push(pathname);
+      if (request.method !== "POST" || pathname !== "/v1/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      if ((request.headers.accept || "").includes("text/event-stream")) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "ok" } }] })}\n\n`);
+        response.write("data: [DONE]\n\n");
+        response.end();
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "capability-report.json");
+  const markdownPath = path.join(dir, "Capability_Report.md");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    `${upstreamUrl}/v1/chat/completions?debug=true#fragment`,
+    "--model",
+    "mock-model",
+    "--out",
+    reportPath,
+    "--markdown",
+    markdownPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  assert.deepEqual([...new Set(seenPaths)], ["/v1/chat/completions"]);
+
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.equal(report.endpoint_input, `${upstreamUrl}/v1/chat/completions?debug=true#fragment`);
+  assert.equal(report.endpoint, `${upstreamUrl}/v1`);
+  assert.deepEqual(report.endpoint_diagnostics.map((item) => item.code), [
+    "DSK_PROBE_ENDPOINT_STRIPPED_SUFFIX",
+    "DSK_PROBE_ENDPOINT_CHAT_COMPLETIONS",
+  ]);
+
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert.match(markdown, /## Endpoint Diagnostics/);
+  assert.match(markdown, /DSK_PROBE_ENDPOINT_CHAT_COMPLETIONS/);
+});
+
 test("probe rejects unknown profiles before network calls", async () => {
   const result = await runNode([
     bin,

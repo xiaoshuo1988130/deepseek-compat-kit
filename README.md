@@ -76,6 +76,7 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 ```
 
 `probe` is a small functional compatibility check, not a benchmark or load test. Use `--profile official`, `--profile relay`, or `--profile self-hosted` to get endpoint-specific guidance in the JSON and Markdown reports.
+If a user accidentally passes a full `/chat/completions` URL, `probe` normalizes it to the base URL and records an endpoint diagnostic in the report.
 
 Print a no-write OpenCode setup recipe:
 

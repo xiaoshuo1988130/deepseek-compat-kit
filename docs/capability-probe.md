@@ -44,6 +44,8 @@ npx deepseek-compat-kit probe \
   --markdown ./Capability_Report.md
 ```
 
+`probe` expects a base URL, but it will normalize a common mistake: if `--endpoint` ends with `/chat/completions`, the report records an endpoint diagnostic and sends requests to the corrected base URL.
+
 ## Profiles
 
 Use `--profile` to tune report guidance:
@@ -69,6 +71,7 @@ The JSON report includes:
 
 - `summary.status`: `PASS`, `WARN`, or `FAIL`.
 - `summary.capabilities`: per-capability status.
+- `endpoint_input` and `endpoint_diagnostics`: original endpoint plus any normalization warnings.
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.
 - `checks[]`: check-level HTTP status, duration, notes, impact, and recommendation.
 

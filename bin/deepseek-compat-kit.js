@@ -299,11 +299,14 @@ async function probeEndpoint(args) {
     return 2;
   }
 
-  const baseUrl = normalizeBaseUrl(endpoint);
+  const endpointInfo = normalizeProbeEndpoint(endpoint);
+  const baseUrl = endpointInfo.baseUrl;
   const report = {
     version: "0.1",
     generated_at: new Date().toISOString(),
+    endpoint_input: endpoint,
     endpoint: baseUrl,
+    endpoint_diagnostics: endpointInfo.diagnostics,
     profile,
     profile_guidance: buildProbeProfileGuidance(profile, baseUrl),
     model,
@@ -363,6 +366,50 @@ async function probeEndpoint(args) {
   }
 
   return report.summary.failed > 0 ? 1 : 0;
+}
+
+function normalizeProbeEndpoint(value) {
+  const raw = String(value || "").trim();
+  const diagnostics = [];
+  let url;
+
+  try {
+    url = new URL(normalizeBaseUrl(raw));
+  } catch {
+    return {
+      baseUrl: normalizeBaseUrl(raw),
+      diagnostics: [{
+        level: "WARN",
+        code: "DSK_PROBE_ENDPOINT_PARSE",
+        message: "Endpoint could not be parsed as a URL. It will be used as provided after trimming trailing slashes.",
+      }],
+    };
+  }
+
+  if (url.search || url.hash) {
+    diagnostics.push({
+      level: "INFO",
+      code: "DSK_PROBE_ENDPOINT_STRIPPED_SUFFIX",
+      message: "Removed query string or hash from probe endpoint.",
+    });
+    url.search = "";
+    url.hash = "";
+  }
+
+  const normalizedPath = url.pathname.replace(/\/+$/, "");
+  if (normalizedPath.endsWith("/chat/completions")) {
+    url.pathname = normalizedPath.slice(0, -"/chat/completions".length) || "/";
+    diagnostics.push({
+      level: "WARN",
+      code: "DSK_PROBE_ENDPOINT_CHAT_COMPLETIONS",
+      message: "Endpoint included /chat/completions. Probe expects a base URL and normalized it before sending requests.",
+    });
+  }
+
+  return {
+    baseUrl: normalizeBaseUrl(url.toString()),
+    diagnostics,
+  };
 }
 
 function normalizeProbeProfile(value) {
@@ -582,10 +629,15 @@ function renderProbeMarkdown(report) {
     "# DeepSeek CompatKit Capability Report",
     "",
     `Generated: ${report.generated_at}`,
+    `Endpoint input: \`${report.endpoint_input}\``,
     `Endpoint: \`${report.endpoint}\``,
     `Profile: \`${report.profile}\``,
     `Model: \`${report.model}\``,
     `Scope: ${report.scope}`,
+    "",
+    "## Endpoint Diagnostics",
+    "",
+    ...renderProbeEndpointDiagnostics(report),
     "",
     "## Profile Guidance",
     "",
@@ -641,6 +693,14 @@ function renderProbeMarkdown(report) {
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+function renderProbeEndpointDiagnostics(report) {
+  if (!report.endpoint_diagnostics || report.endpoint_diagnostics.length === 0) {
+    return ["- No endpoint normalization warnings."];
+  }
+
+  return report.endpoint_diagnostics.map((item) => `- ${item.level} \`${item.code}\`: ${item.message}`);
 }
 
 function escapeMarkdownTable(value) {
