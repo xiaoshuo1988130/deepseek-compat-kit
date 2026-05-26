@@ -72,11 +72,12 @@ Use `--dry-run` first to preview planned changes without writing files. The JSON
 Probe an official, relay, or self-hosted OpenAI-compatible endpoint:
 
 ```bash
-npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
+npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepseek-chat --profile official --api-key-env DEEPSEEK_API_KEY --timeout-ms 15000 --out ./deepseek-capability-report.json --markdown ./Capability_Report.md
 ```
 
 `probe` is a small functional compatibility check, not a benchmark or load test. Use `--profile official`, `--profile relay`, or `--profile self-hosted` to get endpoint-specific guidance in the JSON and Markdown reports.
 If a user accidentally passes a full `/chat/completions` URL, `probe` normalizes it to the base URL and records an endpoint diagnostic in the report.
+Use `--api-key-env NAME` when your relay or gateway stores its credential outside `DEEPSEEK_API_KEY`.
 Use `--fail-on-warn` in CI when warning-level capability gaps should block adoption.
 
 Print a no-write OpenCode setup recipe:

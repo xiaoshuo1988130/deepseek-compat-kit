@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--timeout-ms 15000] [--fail-on-warn]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -403,9 +403,11 @@ async function probeEndpoint(args) {
   const failOnWarn = args.includes("--fail-on-warn");
   const timeoutMsRaw = argValue(args, "--timeout-ms");
   const timeoutMs = timeoutMsRaw === undefined ? 15000 : Number(timeoutMsRaw);
+  const apiKeyEnv = argValue(args, "--api-key-env") || resolveProbeApiKeyEnv();
+  const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : "";
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--timeout-ms 15000] [--fail-on-warn]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
     return 2;
   }
   if (!profile) {
@@ -428,6 +430,10 @@ async function probeEndpoint(args) {
     profile,
     profile_guidance: buildProbeProfileGuidance(profile, baseUrl),
     model,
+    auth: {
+      api_key_env: apiKeyEnv || null,
+      api_key_present: Boolean(apiKey),
+    },
     timeout_ms: timeoutMs,
     fail_on_warn: failOnWarn,
     scope: "functional compatibility probe, not a benchmark",
@@ -448,6 +454,7 @@ async function probeEndpoint(args) {
     recommendation: "If this fails, verify that the endpoint root is correct, includes the right /v1 prefix, uses a valid API key, and exposes the selected model.",
     request: buildProbeRequest({ model, stream: false }),
     baseUrl,
+    apiKey,
     timeoutMs,
   }));
 
@@ -460,6 +467,7 @@ async function probeEndpoint(args) {
     request: buildProbeRequest({ model, stream: true }),
     baseUrl,
     expectStream: true,
+    apiKey,
     timeoutMs,
   }));
 
@@ -471,6 +479,7 @@ async function probeEndpoint(args) {
     recommendation: "If this warns or fails, confirm that the framework preserves reasoning_content and that the provider accepts DeepSeek tool-call message history.",
     request: buildMultiTurnToolProbeRequest(model),
     baseUrl,
+    apiKey,
     timeoutMs,
   }));
 
@@ -483,6 +492,7 @@ async function probeEndpoint(args) {
     request: buildStrictSchemaProbeRequest(model),
     baseUrl,
     validatePayload: (payload) => validateToolCallPayload(payload, "record_query"),
+    apiKey,
     timeoutMs,
   }));
 
@@ -556,6 +566,12 @@ function normalizeProbeProfile(value) {
   if (["relay", "gateway", "provider", "third-party"].includes(normalized)) return "relay";
   if (["self-hosted", "self_hosted", "vllm", "ollama", "local"].includes(normalized)) return "self-hosted";
   return "";
+}
+
+function resolveProbeApiKeyEnv() {
+  if (process.env.DEEPSEEK_API_KEY) return "DEEPSEEK_API_KEY";
+  if (process.env.OPENAI_API_KEY) return "OPENAI_API_KEY";
+  return "DEEPSEEK_API_KEY";
 }
 
 function buildProbeProfileGuidance(profile, endpoint) {
@@ -715,7 +731,7 @@ function buildStrictSchemaProbeRequest(model) {
   };
 }
 
-async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null, timeoutMs = 15000 }) {
+async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null, apiKey = "", timeoutMs = 15000 }) {
   const started = Date.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -734,7 +750,7 @@ async function runProbeCheck({ name, capability, description, impact, recommenda
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
-      headers: buildProbeHeaders(request),
+      headers: buildProbeHeaders(request, apiKey),
       body: JSON.stringify(request),
       signal: controller.signal,
     });
@@ -799,13 +815,13 @@ function validateToolCallPayload(payload, expectedFunctionName) {
   return [];
 }
 
-function buildProbeHeaders(request) {
+function buildProbeHeaders(request, apiKey = "") {
   const headers = {
     "content-type": "application/json",
     "accept": request.stream ? "text/event-stream" : "application/json",
     "user-agent": "deepseek-compat-kit/probe",
   };
-  if (process.env.DEEPSEEK_API_KEY) headers.authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
+  if (apiKey) headers.authorization = `Bearer ${apiKey}`;
   return headers;
 }
 

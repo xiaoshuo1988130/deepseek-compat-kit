@@ -18,6 +18,7 @@ npx deepseek-compat-kit probe \
   --endpoint https://api.deepseek.com \
   --model deepseek-chat \
   --profile official \
+  --api-key-env DEEPSEEK_API_KEY \
   --timeout-ms 15000 \
   --out ./deepseek-capability-report.json \
   --markdown ./Capability_Report.md
@@ -51,6 +52,8 @@ Use `--timeout-ms` to cap each probe request. The default is `15000`.
 
 Use `--fail-on-warn` when running in CI and you want warning-level compatibility gaps to return exit code `1`. Without this flag, warnings are reported but the command only fails on failed checks.
 
+Use `--api-key-env NAME` when the endpoint uses a non-DeepSeek environment variable. By default, `probe` uses `DEEPSEEK_API_KEY` when present, then `OPENAI_API_KEY` when present. Reports only record the environment variable name and whether a value was present; API keys are never written to JSON or Markdown reports.
+
 ## Profiles
 
 Use `--profile` to tune report guidance:
@@ -77,6 +80,7 @@ The JSON report includes:
 
 - `summary.status`: `PASS`, `WARN`, or `FAIL`.
 - `summary.capabilities`: per-capability status.
+- `auth.api_key_env` and `auth.api_key_present`: which environment variable was used, without the secret value.
 - `timeout_ms` and `fail_on_warn`: execution controls used for this run.
 - `endpoint_input` and `endpoint_diagnostics`: original endpoint plus any normalization warnings.
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.

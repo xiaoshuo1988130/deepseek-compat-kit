@@ -479,6 +479,87 @@ test("probe times out slow endpoints and validates timeout arguments", async (t)
   assert.match(report.checks[0].notes.join("\n"), /Timed out after 25 ms/);
 });
 
+test("probe reads API key from explicit env without leaking it", async (t) => {
+  const authorizations = [];
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      authorizations.push(request.headers.authorization || "");
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      if (body.stream) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: "ok" } }] })}\n\n`);
+        response.write("data: [DONE]\n\n");
+        response.end();
+        return;
+      }
+
+      if (body.tool_choice?.function?.name === "record_query") {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({
+          choices: [{
+            message: {
+              role: "assistant",
+              tool_calls: [{
+                id: "call_probe_query",
+                type: "function",
+                function: {
+                  name: "record_query",
+                  arguments: "{\"query\":\"compatibility\"}",
+                },
+              }],
+            },
+          }],
+        }));
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "auth-report.json");
+  const secret = "sk-probe-secret-should-not-leak";
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--api-key-env",
+    "DCK_TEST_API_KEY",
+    "--out",
+    reportPath,
+  ], {
+    env: { DCK_TEST_API_KEY: secret },
+  });
+
+  assert.equal(result.status, 0);
+  assert.ok(authorizations.length > 0);
+  assert.ok(authorizations.every((header) => header === `Bearer ${secret}`));
+
+  const reportText = fs.readFileSync(reportPath, "utf8");
+  const report = JSON.parse(reportText);
+  assert.deepEqual(report.auth, {
+    api_key_env: "DCK_TEST_API_KEY",
+    api_key_present: true,
+  });
+  assert.doesNotMatch(reportText, new RegExp(secret));
+  assert.doesNotMatch(result.stdout, new RegExp(secret));
+});
+
 test("probe rejects unknown profiles before network calls", async () => {
   const result = await runNode([
     bin,
@@ -909,9 +990,10 @@ function listen(server) {
   });
 }
 
-function runNode(args) {
+function runNode(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, {
+      env: { ...process.env, ...(options.env || {}) },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
