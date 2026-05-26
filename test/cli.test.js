@@ -701,6 +701,7 @@ test("matrix summarizes multiple probe reports", () => {
     matrixPath,
     "--markdown",
     markdownPath,
+    "--fail-on-fail",
   ], { encoding: "utf8" });
 
   assert.equal(result.status, 0);
@@ -711,15 +712,39 @@ test("matrix summarizes multiple probe reports", () => {
   assert.equal(matrix.summary.reports, 2);
   assert.equal(matrix.summary.passed, 1);
   assert.equal(matrix.summary.warned, 1);
+  assert.equal(matrix.summary.regressed, 1);
+  assert.equal(matrix.gate.fail_on_fail, true);
+  assert.equal(matrix.gate.fail_on_warn, false);
+  assert.equal(matrix.gate.fail_on_regression, false);
   assert.equal(matrix.reports[0].capabilities.chat_completions, "MISSING");
   assert.equal(matrix.reports[1].baseline_status, "REGRESSED");
 
   const markdown = fs.readFileSync(markdownPath, "utf8");
   assert.match(markdown, /# DeepSeek CompatKit Provider Matrix/);
   assert.match(markdown, /Reports: 2/);
+  assert.match(markdown, /Regressed: 1/);
+  assert.match(markdown, /Fail on fail: yes/);
   assert.match(markdown, /official\.json/);
   assert.match(markdown, /relay\.example\.com/);
   assert.match(markdown, /REGRESSED/);
+
+  const warnGate = spawnSync(process.execPath, [
+    bin,
+    "matrix",
+    officialPath,
+    relayPath,
+    "--fail-on-warn",
+  ], { encoding: "utf8" });
+  assert.equal(warnGate.status, 1);
+
+  const regressionGate = spawnSync(process.execPath, [
+    bin,
+    "matrix",
+    officialPath,
+    relayPath,
+    "--fail-on-regression",
+  ], { encoding: "utf8" });
+  assert.equal(regressionGate.status, 1);
 });
 
 test("probe normalizes full chat completions endpoint URLs", async (t) => {

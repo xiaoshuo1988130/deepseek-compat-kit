@@ -87,6 +87,7 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 
 ```bash
 npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+npx deepseek-compat-kit matrix ./reports/*.json --fail-on-warn --fail-on-regression
 ```
 
 打印一个只读、不改配置的 OpenCode 接入处方：

@@ -14,7 +14,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
-  matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>]
+  matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -1120,13 +1120,16 @@ function providerMatrix(args) {
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   const inputPaths = positionalArgs(args, ["--out", "--markdown", "--out-md"]);
+  const failOnFail = args.includes("--fail-on-fail");
+  const failOnWarn = args.includes("--fail-on-warn");
+  const failOnRegression = args.includes("--fail-on-regression");
 
   if (inputPaths.length === 0) {
-    console.error("Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>]");
+    console.error("Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]");
     return 2;
   }
 
-  const matrix = buildProviderMatrix(inputPaths);
+  const matrix = buildProviderMatrix(inputPaths, { failOnFail, failOnWarn, failOnRegression });
   const markdown = renderProviderMatrixMarkdown(matrix);
 
   if (outputPath) {
@@ -1143,10 +1146,13 @@ function providerMatrix(args) {
     process.stdout.write(markdown);
   }
 
+  if (failOnRegression && matrix.summary.regressed > 0) return 1;
+  if (failOnFail && matrix.summary.failed > 0) return 1;
+  if (failOnWarn && (matrix.summary.warned > 0 || matrix.summary.failed > 0)) return 1;
   return 0;
 }
 
-function buildProviderMatrix(inputPaths) {
+function buildProviderMatrix(inputPaths, options = {}) {
   const reports = inputPaths.map((inputPath) => {
     const report = readJson(inputPath);
     const capabilities = report.summary?.capabilities || {};
@@ -1174,11 +1180,17 @@ function buildProviderMatrix(inputPaths) {
     warned: reports.filter((report) => report.status === "WARN").length,
     failed: reports.filter((report) => report.status === "FAIL").length,
     unknown: reports.filter((report) => !["PASS", "WARN", "FAIL"].includes(report.status)).length,
+    regressed: reports.filter((report) => report.baseline_status === "REGRESSED").length,
   };
 
   return {
     version: "0.1",
     generated_at: new Date().toISOString(),
+    gate: {
+      fail_on_fail: Boolean(options.failOnFail),
+      fail_on_warn: Boolean(options.failOnWarn),
+      fail_on_regression: Boolean(options.failOnRegression),
+    },
     summary,
     reports,
   };
@@ -1197,6 +1209,13 @@ function renderProviderMatrixMarkdown(matrix) {
     `Warned: ${matrix.summary.warned}`,
     `Failed: ${matrix.summary.failed}`,
     `Unknown: ${matrix.summary.unknown}`,
+    `Regressed: ${matrix.summary.regressed}`,
+    "",
+    "## Gate",
+    "",
+    `Fail on fail: ${matrix.gate.fail_on_fail ? "yes" : "no"}`,
+    `Fail on warn: ${matrix.gate.fail_on_warn ? "yes" : "no"}`,
+    `Fail on regression: ${matrix.gate.fail_on_regression ? "yes" : "no"}`,
     "",
     "## Capability Matrix",
     "",
