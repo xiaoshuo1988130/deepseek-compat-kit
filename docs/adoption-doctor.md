@@ -27,6 +27,8 @@ Print a target-specific recipe:
 
 ```bash
 npx deepseek-compat-kit doctor --target opencode --print
+npx deepseek-compat-kit doctor --target cline --print
+npx deepseek-compat-kit doctor --target roo-code --print
 npx deepseek-compat-kit doctor --target openai-js --print
 npx deepseek-compat-kit doctor --target langchain-js --print
 ```
@@ -35,6 +37,8 @@ Include local inventory hints in a single doctor report:
 
 ```bash
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target cline --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target roo-code --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepSeek_Doctor.md
 ```

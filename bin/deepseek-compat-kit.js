@@ -15,8 +15,8 @@ Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
-  doctor --target opencode|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
-  recipes [opencode|openai-js|langchain-js]
+  doctor --target opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
+  recipes [opencode|cline|roo-code|openai-js|langchain-js]
   lint-schema <schema.json> [--strict] [--base-url <url>]
   diagnose <run.jsonl>
   replay <fixture.jsonl>
@@ -828,6 +828,8 @@ function recipes(args) {
   if (!target) {
     console.log("[deepseek-compat-kit] available recipes:");
     console.log("- opencode: print-only DeepSeek/OpenAI-compatible baseURL recipe");
+    console.log("- cline: print-only Cline OpenAI-compatible baseURL recipe");
+    console.log("- roo-code: print-only legacy Roo Code OpenAI-compatible baseURL recipe");
     console.log("- openai-js: print-only OpenAI JS SDK baseURL recipe");
     console.log("- langchain-js: print-only LangChain JS ChatOpenAI baseURL recipe");
     return 0;
@@ -835,7 +837,7 @@ function recipes(args) {
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown recipe "${target}". Available recipes: opencode, openai-js, langchain-js`);
+    console.error(`Unknown recipe "${target}". Available recipes: opencode, cline, roo-code, openai-js, langchain-js`);
     return 2;
   }
 
@@ -848,13 +850,13 @@ function doctor(args) {
   const rootArg = argValue(args, "--path") || argValue(args, "-p");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   if (!target) {
-    console.error("Usage: deepseek-compat-kit doctor --target opencode|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]");
+    console.error("Usage: deepseek-compat-kit doctor --target opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]");
     return 2;
   }
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown doctor target "${target}". Available targets: opencode, openai-js, langchain-js`);
+    console.error(`Unknown doctor target "${target}". Available targets: opencode, cline, roo-code, openai-js, langchain-js`);
     return 2;
   }
 
@@ -957,6 +959,8 @@ function normalizeRecipeTarget(value) {
   if (!value) return "";
   const normalized = String(value).trim().toLowerCase();
   if (["opencode", "open-code", "open_code"].includes(normalized)) return "opencode";
+  if (["cline", "cline-bot", "clinebot"].includes(normalized)) return "cline";
+  if (["roo-code", "roocode", "roo", "roo_code"].includes(normalized)) return "roo-code";
   if (["openai-js", "openai_js", "openai", "openai-sdk", "openai-js-sdk"].includes(normalized)) return "openai-js";
   if (["langchain-js", "langchain_js", "langchain", "langchain-openai"].includes(normalized)) return "langchain-js";
   return normalized;
@@ -964,9 +968,116 @@ function normalizeRecipeTarget(value) {
 
 function recipeFor(target) {
   if (target === "opencode") return opencodeRecipe();
+  if (target === "cline") return clineRecipe();
+  if (target === "roo-code") return rooCodeRecipe();
   if (target === "openai-js") return openAiJsRecipe();
   if (target === "langchain-js") return langChainJsRecipe();
   return undefined;
+}
+
+function clineRecipe() {
+  const markdown = [
+    "# Cline + DeepSeek CompatKit Recipe",
+    "",
+    "Use this when Cline is configured through its OpenAI-compatible provider path and you want to route traffic through DeepSeek CompatKit first.",
+    "",
+    "Safety boundary:",
+    "- This recipe is print-only.",
+    "- It does not edit VS Code, Cline, or extension storage files.",
+    "- It uses Cline's documented OpenAI-compatible `Base URL`, `API Key`, and `Model ID` setup path.",
+    "- Live Cline end-to-end validation is pending.",
+    "",
+    "1. Start the local compatibility proxy:",
+    "",
+    "```bash",
+    "DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787",
+    "```",
+    "",
+    "2. In Cline, choose the OpenAI-compatible provider path and set:",
+    "",
+    "```text",
+    "Base URL: http://127.0.0.1:8787/v1",
+    "API Key: use your DeepSeek API key or your existing local secret flow",
+    "Model ID: deepseek-chat",
+    "```",
+    "",
+    "If you use Cline CLI auth, keep the same values but prefer shell history-safe secret handling.",
+    "",
+    "3. Probe the local path before running a long coding task:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md",
+    "```",
+    "",
+    "4. If Cline tool calling fails under strict schemas, preview schema conversion:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run",
+    "```",
+    "",
+    "Troubleshooting:",
+    "- If Cline cannot connect, test `curl http://127.0.0.1:8787/health` first.",
+    "- If Cline starts a conversation before the proxy is configured, restart the task so the full conversation passes through the proxy from turn one.",
+    "- If the provider UI changes, treat this recipe as the stable values to set rather than a promise about exact UI layout.",
+  ].join("\n");
+
+  return {
+    title: "Cline",
+    markdown,
+  };
+}
+
+function rooCodeRecipe() {
+  const markdown = [
+    "# Roo Code + DeepSeek CompatKit Recipe",
+    "",
+    "Use this only when you still run a local Roo Code installation that exposes an OpenAI-compatible provider path and you want DeepSeek CompatKit to observe and diagnose the local route.",
+    "",
+    "Safety boundary:",
+    "- This recipe is print-only.",
+    "- It does not edit VS Code, Roo Code, or extension storage files.",
+    "- Roo Code official docs currently show a product sunset notice; treat this as a legacy/installed-copies recipe, not a primary adoption target.",
+    "- It assumes the selected Roo Code provider path accepts an OpenAI-compatible base URL.",
+    "- Live Roo Code end-to-end validation is pending.",
+    "",
+    "1. Start the local compatibility proxy:",
+    "",
+    "```bash",
+    "DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787",
+    "```",
+    "",
+    "2. In Roo Code settings, choose an OpenAI-compatible provider path and set:",
+    "",
+    "```text",
+    "Base URL: http://127.0.0.1:8787/v1",
+    "API Key: use your DeepSeek API key or your existing local secret flow",
+    "Model ID: deepseek-chat",
+    "```",
+    "",
+    "If Roo Code exposes a first-party DeepSeek provider, use the OpenAI-compatible path when you need the local CompatKit proxy in the middle.",
+    "",
+    "3. Probe the local path before running a real task:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md",
+    "```",
+    "",
+    "4. If tool schemas fail, preview strict-mode conversion:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run",
+    "```",
+    "",
+    "Troubleshooting:",
+    "- If Roo Code reports a provider error, test the proxy health endpoint and then run `probe`.",
+    "- If requests never reach the proxy, confirm the selected provider path really uses the custom base URL.",
+    "- If reasoning_content repair is needed, start the Roo Code task only after the proxy is configured.",
+  ].join("\n");
+
+  return {
+    title: "Roo Code",
+    markdown,
+  };
 }
 
 function langChainJsRecipe() {

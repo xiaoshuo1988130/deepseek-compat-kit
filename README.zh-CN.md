@@ -82,9 +82,13 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 ```bash
 npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target cline --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target roo-code --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit recipes opencode
+npx deepseek-compat-kit recipes cline
+npx deepseek-compat-kit recipes roo-code
 npx deepseek-compat-kit recipes openai-js
 npx deepseek-compat-kit recipes langchain-js
 ```
@@ -157,6 +161,8 @@ npm run demo:mock
 - [Terminal diagnostics](docs/terminal-diagnostics.md)
 - [Adoption doctor and inventory](docs/adoption-doctor.md)
 - [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
+- [Cline + DeepSeek recipe](docs/recipes/cline-deepseek.md)
+- [Roo Code legacy + DeepSeek recipe](docs/recipes/roo-code-deepseek.md)
 - [OpenAI JS SDK + DeepSeek recipe](docs/recipes/openai-js-deepseek.md)
 - [LangChain JS + DeepSeek recipe](docs/recipes/langchain-js-deepseek.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)

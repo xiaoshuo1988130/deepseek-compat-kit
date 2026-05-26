@@ -275,6 +275,8 @@ test("recipes lists and prints the OpenCode recipe", () => {
   const list = spawnSync(process.execPath, [bin, "recipes"], { encoding: "utf8" });
   assert.equal(list.status, 0);
   assert.match(list.stdout, /opencode/);
+  assert.match(list.stdout, /cline/);
+  assert.match(list.stdout, /roo-code/);
   assert.match(list.stdout, /openai-js/);
   assert.match(list.stdout, /langchain-js/);
 
@@ -284,6 +286,32 @@ test("recipes lists and prints the OpenCode recipe", () => {
   assert.match(recipe.stdout, /http:\/\/127\.0\.0\.1:8787\/v1/);
   assert.match(recipe.stdout, /compile-schema/);
   assert.match(recipe.stdout, /does not edit OpenCode configuration files/);
+});
+
+test("recipes and doctor support Cline adoption", () => {
+  const recipe = spawnSync(process.execPath, [bin, "recipes", "cline"], { encoding: "utf8" });
+  assert.equal(recipe.status, 0);
+  assert.match(recipe.stdout, /Cline \+ DeepSeek CompatKit Recipe/);
+  assert.match(recipe.stdout, /Base URL: http:\/\/127\.0\.0\.1:8787\/v1/);
+  assert.match(recipe.stdout, /does not edit VS Code, Cline, or extension storage files/);
+
+  const doctor = spawnSync(process.execPath, [bin, "doctor", "--target", "cline", "--print"], { encoding: "utf8" });
+  assert.equal(doctor.status, 0);
+  assert.match(doctor.stdout, /DeepSeek CompatKit Doctor: Cline/);
+  assert.match(doctor.stdout, /OpenAI-compatible provider path/);
+});
+
+test("recipes and doctor support Roo Code adoption", () => {
+  const recipe = spawnSync(process.execPath, [bin, "recipes", "roo-code"], { encoding: "utf8" });
+  assert.equal(recipe.status, 0);
+  assert.match(recipe.stdout, /Roo Code \+ DeepSeek CompatKit Recipe/);
+  assert.match(recipe.stdout, /Base URL: http:\/\/127\.0\.0\.1:8787\/v1/);
+  assert.match(recipe.stdout, /does not edit VS Code, Roo Code, or extension storage files/);
+
+  const doctor = spawnSync(process.execPath, [bin, "doctor", "--target", "roo", "--print"], { encoding: "utf8" });
+  assert.equal(doctor.status, 0);
+  assert.match(doctor.stdout, /DeepSeek CompatKit Doctor: Roo Code/);
+  assert.match(doctor.stdout, /OpenAI-compatible provider path/);
 });
 
 test("recipes and doctor support OpenAI JS SDK adoption", () => {
