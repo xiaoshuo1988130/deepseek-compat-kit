@@ -83,8 +83,10 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit recipes opencode
 npx deepseek-compat-kit recipes openai-js
+npx deepseek-compat-kit recipes langchain-js
 ```
 
 inventory 和 doctor 路径刻意保持保守：只扫描显式指定的本地路径，脱敏 secret 值，输出配置建议，不修改本地工具文件。
@@ -156,6 +158,7 @@ npm run demo:mock
 - [Adoption doctor and inventory](docs/adoption-doctor.md)
 - [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
 - [OpenAI JS SDK + DeepSeek recipe](docs/recipes/openai-js-deepseek.md)
+- [LangChain JS + DeepSeek recipe](docs/recipes/langchain-js-deepseek.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.1 release notes](docs/releases/v0.1.1.md)
 - [v0.1.2 release notes](docs/releases/v0.1.2.md)

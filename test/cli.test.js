@@ -276,6 +276,7 @@ test("recipes lists and prints the OpenCode recipe", () => {
   assert.equal(list.status, 0);
   assert.match(list.stdout, /opencode/);
   assert.match(list.stdout, /openai-js/);
+  assert.match(list.stdout, /langchain-js/);
 
   const recipe = spawnSync(process.execPath, [bin, "recipes", "opencode"], { encoding: "utf8" });
   assert.equal(recipe.status, 0);
@@ -296,6 +297,19 @@ test("recipes and doctor support OpenAI JS SDK adoption", () => {
   assert.equal(doctor.status, 0);
   assert.match(doctor.stdout, /DeepSeek CompatKit Doctor: OpenAI JS SDK/);
   assert.match(doctor.stdout, /OpenAI JS SDK \+ DeepSeek CompatKit Recipe/);
+});
+
+test("recipes and doctor support LangChain JS adoption", () => {
+  const recipe = spawnSync(process.execPath, [bin, "recipes", "langchain-js"], { encoding: "utf8" });
+  assert.equal(recipe.status, 0);
+  assert.match(recipe.stdout, /LangChain JS \+ DeepSeek CompatKit Recipe/);
+  assert.match(recipe.stdout, /configuration: \{/);
+  assert.match(recipe.stdout, /baseURL: process\.env\.DEEPSEEK_BASE_URL/);
+
+  const doctor = spawnSync(process.execPath, [bin, "doctor", "--target", "langchain-js", "--print"], { encoding: "utf8" });
+  assert.equal(doctor.status, 0);
+  assert.match(doctor.stdout, /DeepSeek CompatKit Doctor: LangChain JS/);
+  assert.match(doctor.stdout, /@langchain\/openai/);
 });
 
 test("doctor prints a no-write OpenCode prescription", () => {

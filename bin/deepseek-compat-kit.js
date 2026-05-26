@@ -15,8 +15,8 @@ Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
-  doctor --target opencode|openai-js [--path <dir>] [--markdown <doctor.md>] [--print]
-  recipes [opencode|openai-js]
+  doctor --target opencode|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
+  recipes [opencode|openai-js|langchain-js]
   lint-schema <schema.json> [--strict] [--base-url <url>]
   diagnose <run.jsonl>
   replay <fixture.jsonl>
@@ -829,12 +829,13 @@ function recipes(args) {
     console.log("[deepseek-compat-kit] available recipes:");
     console.log("- opencode: print-only DeepSeek/OpenAI-compatible baseURL recipe");
     console.log("- openai-js: print-only OpenAI JS SDK baseURL recipe");
+    console.log("- langchain-js: print-only LangChain JS ChatOpenAI baseURL recipe");
     return 0;
   }
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown recipe "${target}". Available recipes: opencode, openai-js`);
+    console.error(`Unknown recipe "${target}". Available recipes: opencode, openai-js, langchain-js`);
     return 2;
   }
 
@@ -847,13 +848,13 @@ function doctor(args) {
   const rootArg = argValue(args, "--path") || argValue(args, "-p");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   if (!target) {
-    console.error("Usage: deepseek-compat-kit doctor --target opencode|openai-js [--path <dir>] [--markdown <doctor.md>] [--print]");
+    console.error("Usage: deepseek-compat-kit doctor --target opencode|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]");
     return 2;
   }
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown doctor target "${target}". Available targets: opencode, openai-js`);
+    console.error(`Unknown doctor target "${target}". Available targets: opencode, openai-js, langchain-js`);
     return 2;
   }
 
@@ -957,13 +958,71 @@ function normalizeRecipeTarget(value) {
   const normalized = String(value).trim().toLowerCase();
   if (["opencode", "open-code", "open_code"].includes(normalized)) return "opencode";
   if (["openai-js", "openai_js", "openai", "openai-sdk", "openai-js-sdk"].includes(normalized)) return "openai-js";
+  if (["langchain-js", "langchain_js", "langchain", "langchain-openai"].includes(normalized)) return "langchain-js";
   return normalized;
 }
 
 function recipeFor(target) {
   if (target === "opencode") return opencodeRecipe();
   if (target === "openai-js") return openAiJsRecipe();
+  if (target === "langchain-js") return langChainJsRecipe();
   return undefined;
+}
+
+function langChainJsRecipe() {
+  const markdown = [
+    "# LangChain JS + DeepSeek CompatKit Recipe",
+    "",
+    "Use this when a JavaScript or TypeScript project uses `@langchain/openai` and you want to route `ChatOpenAI` through DeepSeek CompatKit.",
+    "",
+    "Safety boundary:",
+    "- This recipe is print-only.",
+    "- It does not edit LangChain project files.",
+    "- It uses the documented `configuration.baseURL` path for OpenAI-compatible endpoints.",
+    "- Live LangChain JS end-to-end validation is pending.",
+    "",
+    "1. Start the local compatibility proxy:",
+    "",
+    "```bash",
+    "DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787",
+    "```",
+    "",
+    "2. Configure `ChatOpenAI` with the local base URL:",
+    "",
+    "```ts",
+    "import { ChatOpenAI } from \"@langchain/openai\";",
+    "",
+    "const model = new ChatOpenAI({",
+    "  model: process.env.DEEPSEEK_MODEL || \"deepseek-chat\",",
+    "  apiKey: process.env.DEEPSEEK_API_KEY,",
+    "  configuration: {",
+    "    baseURL: process.env.DEEPSEEK_BASE_URL || \"http://127.0.0.1:8787/v1\",",
+    "  },",
+    "});",
+    "```",
+    "",
+    "3. Probe the local path before running an Agent:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md",
+    "```",
+    "",
+    "4. If LangChain tools are generated from Zod or JSON Schema, preview strict-mode changes:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run",
+    "```",
+    "",
+    "Troubleshooting:",
+    "- If LangChain retries or wraps provider errors, inspect the proxy terminal logs and the probe report first.",
+    "- If tool calling fails after the first turn, verify whether the full conversation was routed through the proxy from turn one.",
+    "- If schemas fail under strict mode, compile a DeepSeek-compatible copy and keep removed constraints in application validation.",
+  ].join("\n");
+
+  return {
+    title: "LangChain JS",
+    markdown,
+  };
 }
 
 function openAiJsRecipe() {

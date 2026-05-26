@@ -83,8 +83,10 @@ Print a no-write OpenCode setup recipe:
 npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit recipes opencode
 npx deepseek-compat-kit recipes openai-js
+npx deepseek-compat-kit recipes langchain-js
 ```
 
 The inventory and doctor paths are intentionally conservative: they scan only the explicit local path, redact secret values, print configuration prescriptions, and do not modify local tool files.
@@ -156,6 +158,7 @@ Initial proxy scope:
 - [Adoption doctor and inventory](docs/adoption-doctor.md)
 - [OpenCode + DeepSeek recipe](docs/recipes/opencode-deepseek.md)
 - [OpenAI JS SDK + DeepSeek recipe](docs/recipes/openai-js-deepseek.md)
+- [LangChain JS + DeepSeek recipe](docs/recipes/langchain-js-deepseek.md)
 - [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [v0.1.1 release notes](docs/releases/v0.1.1.md)
 - [v0.1.2 release notes](docs/releases/v0.1.2.md)

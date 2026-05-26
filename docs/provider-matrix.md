@@ -11,7 +11,7 @@ Live DeepSeek regression tests are pending. Current proxy and probe behavior are
 | Official DeepSeek API | local proxy | ALPHA | single-process memory, stateful best-effort |
 | OpenAI JS SDK | baseURL proxy recipe | DOCS_ONLY | example and print-only recipe added; live e2e pending |
 | OpenAI Python SDK | baseURL proxy | UNKNOWN | v0.2 target |
-| LangChain JS | tool calling | UNKNOWN | v0.2+ |
+| LangChain JS | ChatOpenAI baseURL recipe | DOCS_ONLY | print-only recipe added; live e2e pending |
 | LlamaIndex | tool calling | UNKNOWN | v0.2+ |
 | OpenClaw | OpenAI-compatible provider config | DOCS_ONLY | integration guide added; live e2e pending |
 | Hermes Agent | DeepSeek/OpenAI-compatible base URL config | DOCS_ONLY | integration guide added; live e2e pending |
