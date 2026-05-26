@@ -27,12 +27,14 @@ Print a target-specific recipe:
 
 ```bash
 npx deepseek-compat-kit doctor --target opencode --print
+npx deepseek-compat-kit doctor --target openai-js --print
 ```
 
 Include local inventory hints in a single doctor report:
 
 ```bash
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
 ```
 
 Doctor is print-only in the current release. It can include an inventory summary when `--path` is provided, but it does not edit OpenCode, Cline, Roo, or other third-party configuration files.

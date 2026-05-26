@@ -15,8 +15,8 @@ Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--dry-run]
   probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
-  doctor --target opencode [--path <dir>] [--markdown <doctor.md>] [--print]
-  recipes [opencode]
+  doctor --target opencode|openai-js [--path <dir>] [--markdown <doctor.md>] [--print]
+  recipes [opencode|openai-js]
   lint-schema <schema.json> [--strict] [--base-url <url>]
   diagnose <run.jsonl>
   replay <fixture.jsonl>
@@ -828,12 +828,13 @@ function recipes(args) {
   if (!target) {
     console.log("[deepseek-compat-kit] available recipes:");
     console.log("- opencode: print-only DeepSeek/OpenAI-compatible baseURL recipe");
+    console.log("- openai-js: print-only OpenAI JS SDK baseURL recipe");
     return 0;
   }
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown recipe "${target}". Available recipes: opencode`);
+    console.error(`Unknown recipe "${target}". Available recipes: opencode, openai-js`);
     return 2;
   }
 
@@ -846,13 +847,13 @@ function doctor(args) {
   const rootArg = argValue(args, "--path") || argValue(args, "-p");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   if (!target) {
-    console.error("Usage: deepseek-compat-kit doctor --target opencode [--path <dir>] [--markdown <doctor.md>] [--print]");
+    console.error("Usage: deepseek-compat-kit doctor --target opencode|openai-js [--path <dir>] [--markdown <doctor.md>] [--print]");
     return 2;
   }
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown doctor target "${target}". Available targets: opencode`);
+    console.error(`Unknown doctor target "${target}". Available targets: opencode, openai-js`);
     return 2;
   }
 
@@ -955,12 +956,66 @@ function normalizeRecipeTarget(value) {
   if (!value) return "";
   const normalized = String(value).trim().toLowerCase();
   if (["opencode", "open-code", "open_code"].includes(normalized)) return "opencode";
+  if (["openai-js", "openai_js", "openai", "openai-sdk", "openai-js-sdk"].includes(normalized)) return "openai-js";
   return normalized;
 }
 
 function recipeFor(target) {
   if (target === "opencode") return opencodeRecipe();
+  if (target === "openai-js") return openAiJsRecipe();
   return undefined;
+}
+
+function openAiJsRecipe() {
+  const markdown = [
+    "# OpenAI JS SDK + DeepSeek CompatKit Recipe",
+    "",
+    "Use this when an existing Node.js or TypeScript project already uses the OpenAI JS SDK and you want to route it through DeepSeek CompatKit.",
+    "",
+    "Safety boundary:",
+    "- This recipe is print-only.",
+    "- It does not edit source files.",
+    "- It assumes your code can configure `baseURL` explicitly.",
+    "",
+    "1. Start the local compatibility proxy:",
+    "",
+    "```bash",
+    "DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787",
+    "```",
+    "",
+    "2. Configure the OpenAI JS client with the local base URL:",
+    "",
+    "```js",
+    "import OpenAI from \"openai\";",
+    "",
+    "const client = new OpenAI({",
+    "  apiKey: process.env.DEEPSEEK_API_KEY,",
+    "  baseURL: process.env.DEEPSEEK_BASE_URL || \"http://127.0.0.1:8787/v1\",",
+    "});",
+    "```",
+    "",
+    "3. Probe the path before using it for a real Agent task:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit probe --endpoint http://127.0.0.1:8787 --model deepseek-chat --out ./deepseek-capability-report.json --markdown ./Capability_Report.md",
+    "```",
+    "",
+    "4. If the project sends generated tool schemas, preview strict-mode changes first:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit compile-schema -i ./tools.schema.json --dry-run",
+    "```",
+    "",
+    "Troubleshooting:",
+    "- If requests fail before reaching DeepSeek, check `DEEPSEEK_BASE_URL` and `curl http://127.0.0.1:8787/health`.",
+    "- If strict schemas fail, run `compile-schema --dry-run` and move removed constraints into application-level validation.",
+    "- If multi-turn tool calling fails with reasoning_content errors, route the whole conversation through the proxy from turn one.",
+  ].join("\n");
+
+  return {
+    title: "OpenAI JS SDK",
+    markdown,
+  };
 }
 
 function opencodeRecipe() {

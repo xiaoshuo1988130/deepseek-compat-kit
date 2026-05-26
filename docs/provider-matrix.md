@@ -9,7 +9,7 @@ Live DeepSeek regression tests are pending. Current proxy and probe behavior are
 | Official DeepSeek API | OpenAI-compatible `/chat/completions` | ALPHA | non-streaming tested through local mock upstream |
 | Official DeepSeek API | capability probe | ALPHA | functional report shape implemented; live DeepSeek run pending |
 | Official DeepSeek API | local proxy | ALPHA | single-process memory, stateful best-effort |
-| OpenAI JS SDK | baseURL proxy | UNKNOWN | v0.2 target |
+| OpenAI JS SDK | baseURL proxy recipe | DOCS_ONLY | example and print-only recipe added; live e2e pending |
 | OpenAI Python SDK | baseURL proxy | UNKNOWN | v0.2 target |
 | LangChain JS | tool calling | UNKNOWN | v0.2+ |
 | LlamaIndex | tool calling | UNKNOWN | v0.2+ |
