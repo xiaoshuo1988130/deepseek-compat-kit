@@ -13,7 +13,7 @@ Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run]
-  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
+  probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
   doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
   recipes [opencode|cline|roo-code|openai-js|langchain-js]
@@ -410,7 +410,7 @@ async function probeEndpoint(args) {
   const failOnRegression = args.includes("--fail-on-regression");
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
+    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
     return 2;
   }
   if (!profile) {
@@ -582,10 +582,19 @@ function availableProbeCheckCapabilities() {
 function parseProbeChecks(value) {
   const raw = String(value || "").trim();
   if (!raw || raw.toLowerCase() === "all") return availableProbeCheckCapabilities();
-  const names = raw.split(",").map((item) => normalizeProbeCheckName(item)).filter(Boolean);
+  const names = raw.split(",").flatMap((item) => expandProbeCheckName(item)).filter(Boolean);
   if (names.length === 0) return null;
   if (names.some((name) => !availableProbeCheckCapabilities().includes(name))) return null;
   return [...new Set(names)];
+}
+
+function expandProbeCheckName(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/-/g, "_");
+  if (!normalized) return [];
+  if (normalized === "all") return availableProbeCheckCapabilities();
+  if (normalized === "basic") return ["chat_completions", "streaming"];
+  if (normalized === "agent") return ["multi_turn_tool_messages", "strict_schema"];
+  return [normalizeProbeCheckName(normalized)];
 }
 
 function normalizeProbeCheckName(value) {

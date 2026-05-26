@@ -79,7 +79,7 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 如果误把完整 `/chat/completions` URL 传给 `--endpoint`，`probe` 会自动规整为 base URL，并在报告里记录 endpoint diagnostic。
 如果中转商或网关的密钥不放在 `DEEPSEEK_API_KEY`，可以用 `--api-key-env NAME` 指定环境变量名。
 如果要在 CI 里把 warning 级别的能力缺口也当成阻断项，可以加 `--fail-on-warn`。
-如果只想做更低成本的 CI 门禁，可以用 `--checks strict_schema,multi_turn_tool_messages` 聚焦关键检查。
+如果只想做更低成本的 CI 门禁，可以用 `--checks agent` 聚焦多轮工具消息和 strict schema；如果只想检查基础连通和流式响应，可以用 `--checks basic`。
 如果要防止 provider 或网关升级后能力退化，可以用 `--baseline ./previous-report.json --fail-on-regression` 做回归门禁。
 
 打印一个只读、不改配置的 OpenCode 接入处方：

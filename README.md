@@ -79,7 +79,7 @@ npx deepseek-compat-kit probe --endpoint https://api.deepseek.com --model deepse
 If a user accidentally passes a full `/chat/completions` URL, `probe` normalizes it to the base URL and records an endpoint diagnostic in the report.
 Use `--api-key-env NAME` when your relay or gateway stores its credential outside `DEEPSEEK_API_KEY`.
 Use `--fail-on-warn` in CI when warning-level capability gaps should block adoption.
-Use `--checks strict_schema,multi_turn_tool_messages` for a focused, lower-cost CI gate.
+Use `--checks agent` for a focused, lower-cost CI gate that covers multi-turn tool messages and strict schemas. Use `--checks basic` for chat and streaming only.
 Use `--baseline ./previous-report.json --fail-on-regression` to catch endpoint capability regressions after provider or gateway changes.
 
 Print a no-write OpenCode setup recipe:

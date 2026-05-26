@@ -62,9 +62,15 @@ Use `--checks` to run a subset of checks when you want a cheaper CI gate or a fo
 npx deepseek-compat-kit probe \
   --endpoint https://relay.example.com/v1 \
   --model deepseek-chat \
-  --checks strict_schema,multi_turn_tool_messages \
+  --checks agent \
   --fail-on-warn
 ```
+
+Useful presets:
+
+- `basic`: run only `chat_completions` and `streaming`.
+- `agent`: run only `multi_turn_tool_messages` and `strict_schema`.
+- `all`: run every probe check. This is the default.
 
 Use `--baseline` to compare the current endpoint against an earlier probe report. Add `--fail-on-regression` in CI when capability regressions should block a change:
 
@@ -72,7 +78,7 @@ Use `--baseline` to compare the current endpoint against an earlier probe report
 npx deepseek-compat-kit probe \
   --endpoint https://relay.example.com/v1 \
   --model deepseek-chat \
-  --checks strict_schema,multi_turn_tool_messages \
+  --checks agent \
   --baseline ./previous-capability-report.json \
   --fail-on-regression
 ```

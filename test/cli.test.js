@@ -365,6 +365,69 @@ test("probe can run a selected subset of checks", async (t) => {
   assert.deepEqual(report.checks.map((check) => check.capability), ["strict_schema"]);
 });
 
+test("probe expands check presets", async (t) => {
+  const requestBodies = [];
+  const mock = http.createServer((request, response) => {
+    collectRequestJson(request).then((body) => {
+      requestBodies.push(body);
+      const pathname = new URL(request.url, "http://127.0.0.1").pathname;
+      if (request.method !== "POST" || pathname !== "/chat/completions") {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "not found" } }));
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        choices: [{
+          message: {
+            role: "assistant",
+            tool_calls: [{
+              id: "call_probe_query",
+              type: "function",
+              function: {
+                name: "record_query",
+                arguments: "{\"query\":\"compatibility\"}",
+              },
+            }],
+          },
+        }],
+      }));
+    }).catch((error) => {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: error.message }));
+    });
+  });
+
+  const upstreamUrl = await listen(mock);
+  t.after(() => mock.close());
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dck-"));
+  const reportPath = path.join(dir, "preset-capability-report.json");
+  const result = await runNode([
+    bin,
+    "probe",
+    "--endpoint",
+    upstreamUrl,
+    "--model",
+    "mock-model",
+    "--checks",
+    "agent",
+    "--out",
+    reportPath,
+  ]);
+
+  assert.equal(result.status, 0);
+  assert.equal(requestBodies.length, 2);
+  assert.ok(requestBodies.some((body) => body.messages?.some((message) => message.reasoning_content)));
+  assert.ok(requestBodies.some((body) => body.tool_choice?.function?.name === "record_query"));
+
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  assert.deepEqual(report.checks_requested, ["multi_turn_tool_messages", "strict_schema"]);
+  assert.equal(report.summary.status, "PASS");
+  assert.deepEqual(report.checks.map((check) => check.capability), ["multi_turn_tool_messages", "strict_schema"]);
+});
+
 test("probe warns when strict schema response lacks tool calls", async (t) => {
   const mock = http.createServer((request, response) => {
     collectRequestJson(request).then((body) => {
