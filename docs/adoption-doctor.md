@@ -7,7 +7,7 @@ DeepSeek CompatKit includes conservative adoption helpers for local projects tha
 Run inventory against an explicit local path:
 
 ```bash
-npx deepseek-compat-kit inventory --path . --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
+npx deepseek-compat-kit inventory --path . --max-files 500 --out ./deepseek-inventory.json --markdown ./DeepSeek_Inventory.md
 ```
 
 Inventory scans only the path you provide. It skips common generated or dependency directories such as `.git`, `node_modules`, `dist`, `build`, `coverage`, `.next`, and `.cache`.
@@ -18,7 +18,7 @@ It looks for:
 - DeepSeek model names such as `deepseek-chat`.
 - DeepSeek or local proxy base URL candidates.
 - API key variable assignments and raw key-like strings.
-- Tool or framework targets such as OpenCode, Cline, OpenAI JS SDK, and LangChain JS.
+- Tool or framework targets such as OpenCode, Cline, Roo Code, OpenRouter, OpenAI JS SDK, and LangChain JS.
 
 Secret values are never recorded in the JSON or Markdown report. The report only records variable names, file paths, line numbers, and diagnostic codes.
 
@@ -30,6 +30,8 @@ npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepS
 ```
 
 These recommendations do not change files. They are routing hints for the next diagnostic step.
+
+Inventory scans at most 500 candidate files by default. Use `--max-files <n>` to change that limit. If the limit is reached, the report says so and recommends re-running against a narrower path.
 
 ## Doctor
 
@@ -47,6 +49,7 @@ Print a target-specific recipe:
 npx deepseek-compat-kit doctor --target opencode --print
 npx deepseek-compat-kit doctor --target cline --print
 npx deepseek-compat-kit doctor --target roo-code --print
+npx deepseek-compat-kit doctor --target openrouter --print
 npx deepseek-compat-kit doctor --target openai-js --print
 npx deepseek-compat-kit doctor --target langchain-js --print
 ```
@@ -58,6 +61,7 @@ npx deepseek-compat-kit doctor --target auto --path . --markdown ./DeepSeek_Doct
 npx deepseek-compat-kit doctor --target opencode --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target cline --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target roo-code --path . --markdown ./DeepSeek_Doctor.md
+npx deepseek-compat-kit doctor --target openrouter --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target openai-js --path . --markdown ./DeepSeek_Doctor.md
 npx deepseek-compat-kit doctor --target langchain-js --path . --markdown ./DeepSeek_Doctor.md
 ```

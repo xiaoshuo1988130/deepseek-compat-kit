@@ -11,6 +11,8 @@ It is designed for:
 
 It is not a latency benchmark, throughput benchmark, or model quality evaluation.
 
+For a full official API, relay, local proxy, and private gateway validation workflow, see [Real Endpoint Validation](real-endpoint-validation.md).
+
 ## Run
 
 ```bash
@@ -33,6 +35,9 @@ npx deepseek-compat-kit probe \
   --name "Example Relay" \
   --model deepseek-chat \
   --profile relay \
+  --header "HTTP-Referer: https://example.com" \
+  --header "X-Title: DeepSeek CompatKit Probe" \
+  --header-env "X-Relay-Token=RELAY_TOKEN" \
   --out ./deepseek-capability-report.json \
   --markdown ./Capability_Report.md
 ```
@@ -60,6 +65,10 @@ Use `--timeout-ms` to cap each probe request. The default is `15000`.
 Use `--fail-on-warn` when running in CI and you want warning-level compatibility gaps to return exit code `1`. Without this flag, warnings are reported but the command only fails on failed checks.
 
 Use `--api-key-env NAME` when the endpoint uses a non-DeepSeek environment variable. By default, `probe` uses `DEEPSEEK_API_KEY` when present, then `OPENAI_API_KEY` when present. Reports only record the environment variable name and whether a value was present; API keys are never written to JSON or Markdown reports.
+
+Use repeated `--header "Name: Value"` options when a relay requires non-secret routing or attribution headers such as `HTTP-Referer` or `X-Title`. Probe reports record only the extra header names, not their values.
+
+Use repeated `--header-env "Name=ENV_VAR"` options when a relay requires a sensitive custom header. The environment variable must be set before the probe runs. Reports record the header name and environment variable name, never the header value. Prefer `--api-key-env` for normal bearer tokens and `--header-env` only for provider-specific header auth.
 
 When an endpoint returns an error body, `probe` includes a short sanitized excerpt in the report. Bearer tokens, `sk-...` API keys, email addresses, and common URL token parameters are redacted before writing JSON or Markdown reports.
 
@@ -120,6 +129,8 @@ The JSON report includes:
 - `checks_requested`: the selected capability checks for this run.
 - `baseline`: regression, improvement, and unchanged capability comparison when `--baseline` is used.
 - `timeout_ms` and `fail_on_warn`: execution controls used for this run.
+- `extra_headers.names`: extra request header names supplied by `--header` or `--header-env`, without values.
+- `extra_headers.env`: extra request header names sourced from environment variables, without values.
 - `endpoint_input` and `endpoint_diagnostics`: original endpoint plus any normalization warnings.
 - `profile_guidance`: endpoint-specific hints, risks, and next steps.
 - `checks[]`: check-level HTTP status, duration, notes, impact, and recommendation.

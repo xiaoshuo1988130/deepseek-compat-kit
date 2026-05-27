@@ -41,7 +41,11 @@ Then point the OpenAI-compatible baseURL to:
 
 http://127.0.0.1:8787/v1
 
-Boundary: this proxy is stateful best-effort. It can help only if the relevant requests and responses pass through it. It cannot reconstruct reasoning_content that was already lost before reaching the proxy.
+Optional report:
+
+npx deepseek-compat-kit diagnose ./logs/proxy.jsonl --out ./diagnose-report.json --markdown ./Diagnose_Report.md
+
+Boundary: this proxy is stateful conservative. It can help only if the relevant requests and responses pass through it. It cannot reconstruct reasoning_content that was already lost before reaching the proxy.
 
 Docs:
 https://github.com/<owner>/deepseek-compat-kit/blob/main/docs/errors/reasoning-content-400.md

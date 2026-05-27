@@ -21,7 +21,7 @@ DEEPSEEK_API_KEY=sk-... npx deepseek-compat-kit proxy --port 8787
 Expected terminal output:
 
 ```text
-[deepseek-compat-kit] proxy alpha listening on http://127.0.0.1:8787/v1
+[deepseek-compat-kit] proxy listening on http://127.0.0.1:8787/v1
 [deepseek-compat-kit] upstream: https://api.deepseek.com
 ```
 

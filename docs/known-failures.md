@@ -15,7 +15,7 @@ The reasoning_content in the thinking mode must be passed back to the API
 Initial action:
 
 ```bash
-npx deepseek-compat-kit diagnose ./logs/deepseek-run.jsonl
+npx deepseek-compat-kit diagnose ./logs/deepseek-run.jsonl --out ./diagnose-report.json --markdown ./Diagnose_Report.md
 ```
 
 ## DSK_SCHEMA_002

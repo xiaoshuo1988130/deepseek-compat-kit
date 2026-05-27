@@ -4,40 +4,65 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ERROR_TEXT = "The reasoning_content in the thinking mode must be passed back to the API";
+const packageJsonPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
 
 const help = `DeepSeek CompatKit
 
 Compatibility and diagnostics for DeepSeek V4 tool-calling agents.
 
 Commands:
+  --version | -v | version
   compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]
-  probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
+  probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--header "Name: Value"] [--header-env "Name=ENV_VAR"] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]
   matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--require all|basic|agent|a,b] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]
-  inventory [--path <dir>] [--out <inventory.json>] [--markdown <inventory.md>]
-  doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]
-  recipes [opencode|cline|roo-code|openai-js|langchain-js]
+  inventory [--path <dir>] [--max-files 500] [--out <inventory.json>] [--markdown <inventory.md>]
+  doctor --target auto|opencode|cline|roo-code|openrouter|openai-js|langchain-js [--path <dir>] [--max-files 500] [--markdown <doctor.md>] [--print]
+  recipes [opencode|cline|roo-code|openrouter|openai-js|langchain-js]
   lint-schema <schema.json> [--strict] [--base-url <url>]
-  diagnose <run.jsonl>
+  diagnose <run.jsonl> [--out <report.json>] [--markdown <report.md>] [--fail-on-warn]
   replay <fixture.jsonl>
   sanitize <run.jsonl> --out <safe.jsonl>
-  proxy [--port 8787] [--upstream https://api.deepseek.com]
+  proxy [--port 8787] [--upstream https://api.deepseek.com] [--upstream-api-key-env NAME] [--upstream-timeout-ms 30000] [--state-ttl-ms 3600000] [--diagnostics-log <run.jsonl>] [--upstream-header "Name: Value"] [--upstream-header-env "Name=ENV_VAR"]
 
 Common error:
   ${ERROR_TEXT}
 
 Proxy boundary:
-  reasoning_content repair is stateful best-effort, not a stateless magic fix.
+  reasoning_content repair is stateful conservative, not a stateless magic fix.
   If reasoning_content was lost before the request reached this proxy, the
   proxy can diagnose the problem but cannot reconstruct the missing content.
 `;
 
+const commandUsage = {
+  "compile-schema": "Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]",
+  probe: "Usage: deepseek-compat-kit probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--header \"Name: Value\"] [--header-env \"Name=ENV_VAR\"] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]",
+  matrix: "Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--require all|basic|agent|a,b] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]",
+  inventory: "Usage: deepseek-compat-kit inventory [--path <dir>] [--max-files 500] [--out <inventory.json>] [--markdown <inventory.md>]",
+  doctor: "Usage: deepseek-compat-kit doctor --target auto|opencode|cline|roo-code|openrouter|openai-js|langchain-js [--path <dir>] [--max-files 500] [--markdown <doctor.md>] [--print]",
+  recipes: "Usage: deepseek-compat-kit recipes [opencode|cline|roo-code|openrouter|openai-js|langchain-js]",
+  "lint-schema": "Usage: deepseek-compat-kit lint-schema <schema.json> [--strict] [--base-url <url>]",
+  diagnose: "Usage: deepseek-compat-kit diagnose <run.jsonl> [--out <report.json>] [--markdown <report.md>] [--fail-on-warn]",
+  replay: "Usage: deepseek-compat-kit replay <fixture.jsonl> [--out <report.json>] [--markdown <report.md>] [--fail-on-warn]",
+  sanitize: "Usage: deepseek-compat-kit sanitize <run.jsonl> --out <safe.jsonl>",
+  proxy: "Usage: deepseek-compat-kit proxy [--port 8787] [--upstream https://api.deepseek.com] [--upstream-api-key-env NAME] [--upstream-timeout-ms 30000] [--state-ttl-ms 3600000] [--diagnostics-log <run.jsonl>] [--upstream-header \"Name: Value\"] [--upstream-header-env \"Name=ENV_VAR\"]",
+};
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
 
+  if (command === "help" && args[0] && commandUsage[args[0]]) {
+    return printUsage(args[0]);
+  }
+
   if (!command || command === "--help" || command === "-h" || command === "help") {
     console.log(help);
+    return 0;
+  }
+  if (command === "--version" || command === "-v" || command === "version") {
+    console.log(`deepseek-compat-kit ${packageVersion()}`);
     return 0;
   }
 
@@ -49,7 +74,7 @@ function main() {
   if (command === "doctor") return doctor(args);
   if (command === "recipes") return recipes(args);
   if (command === "diagnose") return diagnose(args);
-  if (command === "replay") return diagnose(args);
+  if (command === "replay") return wantsHelp(args) ? printUsage("replay") : diagnose(args);
   if (command === "sanitize") return sanitize(args);
   if (command === "proxy") return startProxy(args);
 
@@ -71,27 +96,73 @@ function readJson(filePath) {
   }
 }
 
+function packageVersion() {
+  try {
+    return readJson(packageJsonPath).version || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 function readJsonl(filePath) {
-  return readText(filePath)
+  const events = [];
+  readText(filePath)
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
+    .forEach((rawLine, index) => {
+      const line = rawLine.trim();
+      if (!line) return;
       try {
-        return JSON.parse(line);
+        events.push(JSON.parse(line));
       } catch (error) {
-        throw new Error(`Failed to parse JSONL line ${index + 1}: ${error.message}`);
+        throw new Error(`Failed to parse JSONL line ${index + 1} in ${filePath}: ${error.message}`);
       }
     });
+  return events;
+}
+
+function writeTextFile(filePath, contents) {
+  const resolved = path.resolve(filePath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, contents);
 }
 
 function argValue(args, name) {
   const index = args.indexOf(name);
-  return index === -1 ? undefined : args[index + 1];
+  if (index !== -1) return args[index + 1];
+
+  const prefix = `${name}=`;
+  const inline = args.find((arg) => arg.startsWith(prefix));
+  return inline ? inline.slice(prefix.length) : undefined;
 }
 
-function firstPositional(args) {
-  return args.find((arg, index) => !arg.startsWith("-") && !args[index - 1]?.startsWith("--"));
+function argValues(args, name) {
+  const values = [];
+  const prefix = `${name}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name) values.push(args[index + 1]);
+    if (args[index].startsWith(prefix)) values.push(args[index].slice(prefix.length));
+  }
+  return values.filter((value) => value !== undefined);
+}
+
+function wantsHelp(args) {
+  return args.includes("--help") || args.includes("-h") || args.includes("help");
+}
+
+function printUsage(command) {
+  console.log(commandUsage[command]);
+  return 0;
+}
+
+function positiveIntegerArg(args, name, defaultValue) {
+  const rawValue = argValue(args, name);
+  const value = rawValue === undefined ? defaultValue : Number(rawValue);
+  if (!Number.isInteger(value) || value <= 0) return undefined;
+  return value;
+}
+
+function firstPositional(args, valueOptions = []) {
+  return positionalArgs(args, valueOptions)[0];
 }
 
 function positionalArgs(args, valueOptions = []) {
@@ -109,7 +180,17 @@ function positionalArgs(args, valueOptions = []) {
 }
 
 function compileSchema(args) {
-  const inputPath = argValue(args, "-i") || argValue(args, "--input") || args.find((arg) => !arg.startsWith("-"));
+  if (wantsHelp(args)) return printUsage("compile-schema");
+
+  const inputPath = argValue(args, "-i") || argValue(args, "--input") || firstPositional(args, [
+    "-i",
+    "--input",
+    "-o",
+    "--out",
+    "--report",
+    "--markdown",
+    "--out-md",
+  ]);
   const outputPath = argValue(args, "-o") || argValue(args, "--out");
   const reportPath = argValue(args, "--report");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
@@ -117,7 +198,7 @@ function compileSchema(args) {
   const checkOnly = args.includes("--check");
 
   if (!inputPath) {
-    console.error("Usage: deepseek-compat-kit compile-schema -i <schema.json> [-o <deepseek.schema.json>] [--report <report.json>] [--markdown <report.md>] [--dry-run] [--check]");
+    console.error(commandUsage["compile-schema"]);
     return 2;
   }
 
@@ -143,19 +224,19 @@ function compileSchema(args) {
   }
 
   if (outputPath) {
-    fs.writeFileSync(path.resolve(outputPath), compiledText);
+    writeTextFile(outputPath, compiledText);
     console.log(`[deepseek-compat-kit] wrote DeepSeek strict schema: ${outputPath}`);
   } else {
     process.stdout.write(compiledText);
   }
 
   if (reportPath) {
-    fs.writeFileSync(path.resolve(reportPath), `${JSON.stringify(report, null, 2)}\n`);
+    writeTextFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
     console.log(`[deepseek-compat-kit] wrote compile report: ${reportPath}`);
   }
 
   if (markdownPath) {
-    fs.writeFileSync(path.resolve(markdownPath), renderCompileMarkdown(report));
+    writeTextFile(markdownPath, renderCompileMarkdown(report));
     console.log(`[deepseek-compat-kit] wrote markdown compile report: ${markdownPath}`);
   }
 
@@ -423,6 +504,8 @@ function printCompilePlan(report) {
 }
 
 async function probeEndpoint(args) {
+  if (wantsHelp(args)) return printUsage("probe");
+
   const endpoint = argValue(args, "--endpoint") || argValue(args, "--base-url");
   const reportName = argValue(args, "--name") || argValue(args, "--label") || "";
   const model = argValue(args, "--model") || "deepseek-chat";
@@ -437,9 +520,11 @@ async function probeEndpoint(args) {
   const selectedChecks = parseProbeChecks(argValue(args, "--checks") || "all");
   const baselinePath = argValue(args, "--baseline");
   const failOnRegression = args.includes("--fail-on-regression");
+  const literalHeaders = parseProbeHeaders(argValues(args, "--header"));
+  const envHeaders = parseProbeHeaderEnvs(argValues(args, "--header-env"), process.env);
 
   if (!endpoint) {
-    console.error("Usage: deepseek-compat-kit probe --endpoint <url> [--name <display-name>] [--model <model>] [--out <report.json>] [--markdown <report.md>] [--profile official|openai|relay|self-hosted] [--checks all|basic|agent|a,b] [--baseline <report.json>] [--fail-on-regression] [--api-key-env NAME] [--timeout-ms 15000] [--fail-on-warn]");
+    console.error(commandUsage.probe);
     return 2;
   }
   if (!profile) {
@@ -454,9 +539,23 @@ async function probeEndpoint(args) {
     console.error("--timeout-ms must be a positive integer.");
     return 2;
   }
+  if (!literalHeaders) {
+    console.error("--header must use the form \"Name: Value\" and valid HTTP token header names.");
+    return 2;
+  }
+  if (envHeaders.error) {
+    console.error(envHeaders.error);
+    return 2;
+  }
+  const baselineReport = loadProbeBaselineForComparison(baselinePath);
+  if (baselineReport?.error) {
+    console.error(baselineReport.error);
+    return 2;
+  }
 
   const endpointInfo = normalizeProbeEndpoint(endpoint);
   const baseUrl = endpointInfo.baseUrl;
+  const extraHeaders = { ...envHeaders.headers, ...literalHeaders };
   const report = {
     version: "0.1",
     generated_at: new Date().toISOString(),
@@ -470,6 +569,11 @@ async function probeEndpoint(args) {
     auth: {
       api_key_env: apiKeyEnv || null,
       api_key_present: Boolean(apiKey),
+    },
+    extra_headers: {
+      count: Object.keys(extraHeaders).length,
+      names: Object.keys(extraHeaders),
+      env: envHeaders.metadata,
     },
     checks_requested: selectedChecks,
     baseline_path: baselinePath || null,
@@ -486,26 +590,26 @@ async function probeEndpoint(args) {
     },
   };
 
-  for (const check of buildProbeChecks(model, baseUrl, apiKey, timeoutMs)) {
+  for (const check of buildProbeChecks(model, baseUrl, apiKey, timeoutMs, extraHeaders)) {
     if (!selectedChecks.includes(check.capability)) continue;
     report.checks.push(await runProbeCheck(check));
   }
 
   summarizeProbe(report);
-  if (baselinePath) {
-    report.baseline = compareProbeBaseline(readJson(baselinePath), report, baselinePath);
+  if (baselineReport?.report) {
+    report.baseline = compareProbeBaseline(baselineReport.report, report, baselinePath);
   }
 
   const text = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) {
-    fs.writeFileSync(path.resolve(outputPath), text);
+    writeTextFile(outputPath, text);
     console.log(`[deepseek-compat-kit] wrote capability report: ${outputPath}`);
   } else {
     process.stdout.write(text);
   }
 
   if (markdownPath) {
-    fs.writeFileSync(path.resolve(markdownPath), renderProbeMarkdown(report));
+    writeTextFile(markdownPath, renderProbeMarkdown(report));
     console.log(`[deepseek-compat-kit] wrote markdown capability report: ${markdownPath}`);
   }
 
@@ -588,7 +692,7 @@ function probeStatusRank(status) {
   return 0;
 }
 
-function buildProbeChecks(model, baseUrl, apiKey, timeoutMs) {
+function buildProbeChecks(model, baseUrl, apiKey, timeoutMs, extraHeaders = {}) {
   return [{
     name: "chat_completions",
     capability: "chat_completions",
@@ -599,6 +703,7 @@ function buildProbeChecks(model, baseUrl, apiKey, timeoutMs) {
     baseUrl,
     apiKey,
     timeoutMs,
+    extraHeaders,
   }, {
     name: "streaming",
     capability: "streaming",
@@ -610,6 +715,7 @@ function buildProbeChecks(model, baseUrl, apiKey, timeoutMs) {
     expectStream: true,
     apiKey,
     timeoutMs,
+    extraHeaders,
   }, {
     name: "multi_turn_tool_messages",
     capability: "multi_turn_tool_messages",
@@ -620,6 +726,7 @@ function buildProbeChecks(model, baseUrl, apiKey, timeoutMs) {
     baseUrl,
     apiKey,
     timeoutMs,
+    extraHeaders,
   }, {
     name: "strict_schema_request",
     capability: "strict_schema",
@@ -631,6 +738,7 @@ function buildProbeChecks(model, baseUrl, apiKey, timeoutMs) {
     validatePayload: (payload) => validateToolCallPayload(payload, "record_query"),
     apiKey,
     timeoutMs,
+    extraHeaders,
   }];
 }
 
@@ -650,6 +758,47 @@ function parseProbeChecks(value) {
   if (names.length === 0) return null;
   if (names.some((name) => !availableProbeCheckCapabilities().includes(name))) return null;
   return [...new Set(names)];
+}
+
+function parseProbeHeaders(values) {
+  const headers = {};
+  for (const raw of values || []) {
+    const separator = String(raw).indexOf(":");
+    if (separator <= 0) return null;
+    const name = String(raw).slice(0, separator).trim().toLowerCase();
+    const value = String(raw).slice(separator + 1).trim();
+    if (!isSafeProbeHeaderName(name) || !value) return null;
+    headers[name] = value;
+  }
+  return headers;
+}
+
+function parseProbeHeaderEnvs(values, env) {
+  const headers = {};
+  const metadata = [];
+  for (const raw of values || []) {
+    const separator = String(raw).indexOf("=");
+    if (separator <= 0) {
+      return { error: "--header-env must use the form \"Name=ENV_VAR\".", headers: {}, metadata: [] };
+    }
+    const name = String(raw).slice(0, separator).trim().toLowerCase();
+    const envName = String(raw).slice(separator + 1).trim();
+    if (!isSafeProbeHeaderName(name) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(envName)) {
+      return { error: "--header-env must use a valid HTTP token header name and environment variable name.", headers: {}, metadata: [] };
+    }
+    const value = env[envName];
+    if (!value) {
+      return { error: `--header-env ${name}=${envName} was requested, but ${envName} is not set.`, headers: {}, metadata: [] };
+    }
+    headers[name] = value;
+    metadata.push({ name, env: envName, present: true });
+  }
+  return { headers, metadata };
+}
+
+function isSafeProbeHeaderName(name) {
+  if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/i.test(name)) return false;
+  return !["host", "content-length", "connection", "transfer-encoding"].includes(name);
 }
 
 function expandProbeCheckName(value) {
@@ -886,7 +1035,7 @@ function buildStrictSchemaProbeRequest(model) {
   };
 }
 
-async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null, apiKey = "", timeoutMs = 15000 }) {
+async function runProbeCheck({ name, capability, description, impact, recommendation, request, baseUrl, expectStream = false, validatePayload = null, apiKey = "", timeoutMs = 15000, extraHeaders = {} }) {
   const started = Date.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -905,7 +1054,7 @@ async function runProbeCheck({ name, capability, description, impact, recommenda
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
-      headers: buildProbeHeaders(request, apiKey),
+      headers: buildProbeHeaders(request, apiKey, extraHeaders),
       body: JSON.stringify(request),
       signal: controller.signal,
     });
@@ -970,11 +1119,12 @@ function validateToolCallPayload(payload, expectedFunctionName) {
   return [];
 }
 
-function buildProbeHeaders(request, apiKey = "") {
+function buildProbeHeaders(request, apiKey = "", extraHeaders = {}) {
   const headers = {
     "content-type": "application/json",
     "accept": request.stream ? "text/event-stream" : "application/json",
     "user-agent": "deepseek-compat-kit/probe",
+    ...extraHeaders,
   };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
   return headers;
@@ -1027,6 +1177,8 @@ function renderProbeMarkdown(report) {
     "",
     `API key env: \`${report.auth?.api_key_env || "none"}\``,
     `API key present: ${report.auth?.api_key_present ? "yes" : "no"}`,
+    `Extra headers: ${renderInlineCodeList(report.extra_headers?.names || [])}`,
+    `Extra header env vars: ${renderProbeHeaderEnvList(report.extra_headers?.env || [])}`,
     `Checks requested: ${renderInlineCodeList(report.checks_requested || report.checks.map((check) => check.capability))}`,
     `Timeout: ${report.timeout_ms ?? "not recorded"} ms`,
     `Fail on warn: ${report.fail_on_warn ? "yes" : "no"}`,
@@ -1115,11 +1267,18 @@ function renderInlineCodeList(items) {
   return (items || []).map((item) => `\`${escapeMarkdownTable(item)}\``).join(", ") || "none";
 }
 
+function renderProbeHeaderEnvList(items) {
+  if (!items || items.length === 0) return "none";
+  return items.map((item) => `\`${escapeMarkdownTable(item.name)}=${escapeMarkdownTable(item.env)}\``).join(", ");
+}
+
 function escapeMarkdownTable(value) {
   return String(value).replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>");
 }
 
 function providerMatrix(args) {
+  if (wantsHelp(args)) return printUsage("matrix");
+
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
   const inputPaths = positionalArgs(args, ["--out", "--markdown", "--out-md", "--require", "--require-capabilities"]);
@@ -1130,7 +1289,7 @@ function providerMatrix(args) {
   const failOnRegression = args.includes("--fail-on-regression");
 
   if (inputPaths.length === 0) {
-    console.error("Usage: deepseek-compat-kit matrix <probe-report.json...> [--out <matrix.json>] [--markdown <matrix.md>] [--require all|basic|agent|a,b] [--fail-on-fail] [--fail-on-warn] [--fail-on-regression]");
+    console.error(commandUsage.matrix);
     return 2;
   }
   if (requiredCapabilitiesRaw && !requiredCapabilities) {
@@ -1138,16 +1297,32 @@ function providerMatrix(args) {
     return 2;
   }
 
-  const matrix = buildProviderMatrix(inputPaths, { failOnFail, failOnWarn, failOnRegression, requiredCapabilities });
+  const expandedInputPaths = expandMatrixInputPaths(inputPaths, [outputPath, markdownPath].filter(Boolean));
+  if (expandedInputPaths.length === 0) {
+    console.error("matrix did not find any probe report JSON files.");
+    return 2;
+  }
+  const missingInputPath = expandedInputPaths.find((inputPath) => !fs.existsSync(inputPath));
+  if (missingInputPath) {
+    console.error(`matrix input path does not exist: ${missingInputPath}`);
+    return 2;
+  }
+  const invalidInput = findInvalidMatrixInput(expandedInputPaths);
+  if (invalidInput) {
+    console.error(invalidInput.message);
+    return 2;
+  }
+
+  const matrix = buildProviderMatrix(expandedInputPaths, { failOnFail, failOnWarn, failOnRegression, requiredCapabilities });
   const markdown = renderProviderMatrixMarkdown(matrix);
 
   if (outputPath) {
-    fs.writeFileSync(path.resolve(outputPath), `${JSON.stringify(matrix, null, 2)}\n`);
+    writeTextFile(outputPath, `${JSON.stringify(matrix, null, 2)}\n`);
     console.log(`[deepseek-compat-kit] wrote provider matrix: ${outputPath}`);
   }
 
   if (markdownPath) {
-    fs.writeFileSync(path.resolve(markdownPath), markdown);
+    writeTextFile(markdownPath, markdown);
     console.log(`[deepseek-compat-kit] wrote markdown provider matrix: ${markdownPath}`);
   }
 
@@ -1160,6 +1335,78 @@ function providerMatrix(args) {
   if (failOnFail && matrix.summary.failed > 0) return 1;
   if (failOnWarn && (matrix.summary.warned > 0 || matrix.summary.failed > 0)) return 1;
   return 0;
+}
+
+function expandMatrixInputPaths(inputPaths, excludedPaths = []) {
+  const excluded = new Set(excludedPaths.map((item) => path.resolve(item)));
+  const expanded = [];
+  for (const inputPath of inputPaths) {
+    const resolved = path.resolve(inputPath);
+    if (!fs.existsSync(resolved)) {
+      expanded.push(inputPath);
+      continue;
+    }
+    const stat = fs.statSync(resolved);
+    if (!stat.isDirectory()) {
+      if (!excluded.has(resolved)) expanded.push(inputPath);
+      continue;
+    }
+    const children = fs.readdirSync(resolved)
+      .filter((name) => name.toLowerCase().endsWith(".json"))
+      .map((name) => path.join(resolved, name))
+      .filter((childPath) => !excluded.has(path.resolve(childPath)))
+      .filter((childPath) => isLikelyProbeReportPath(childPath))
+      .sort((left, right) => left.localeCompare(right));
+    expanded.push(...children);
+  }
+  return [...new Set(expanded.map((item) => path.resolve(item)))];
+}
+
+function isLikelyProbeReportPath(filePath) {
+  try {
+    const report = readJson(filePath);
+    return Boolean(report?.summary?.capabilities);
+  } catch {
+    return false;
+  }
+}
+
+function findInvalidMatrixInput(inputPaths) {
+  for (const inputPath of inputPaths) {
+    let report;
+    try {
+      report = readJson(inputPath);
+    } catch (error) {
+      return {
+        inputPath,
+        message: `matrix input is not a readable probe report JSON: ${inputPath}; ${error.message}`,
+      };
+    }
+    if (!report?.summary?.capabilities) {
+      return {
+        inputPath,
+        message: `matrix input is not a probe report JSON: ${inputPath}`,
+      };
+    }
+  }
+  return null;
+}
+
+function loadProbeBaselineForComparison(baselinePath) {
+  if (!baselinePath) return null;
+  if (!fs.existsSync(path.resolve(baselinePath))) {
+    return { error: `probe baseline path does not exist: ${baselinePath}` };
+  }
+  let report;
+  try {
+    report = readJson(baselinePath);
+  } catch (error) {
+    return { error: `probe baseline is not a readable probe report JSON: ${baselinePath}; ${error.message}` };
+  }
+  if (!report?.summary?.capabilities) {
+    return { error: `probe baseline is not a probe report JSON: ${baselinePath}` };
+  }
+  return { report };
 }
 
 function buildProviderMatrix(inputPaths, options = {}) {
@@ -1287,12 +1534,26 @@ function renderProviderMatrixMarkdown(matrix) {
 }
 
 function inventory(args) {
-  const rootArg = argValue(args, "--path") || argValue(args, "-p") || firstPositional(args) || process.cwd();
+  if (wantsHelp(args)) return printUsage("inventory");
+
+  const rootArg = argValue(args, "--path") || argValue(args, "-p") || firstPositional(args, [
+    "--path",
+    "-p",
+    "--max-files",
+    "--out",
+    "--markdown",
+    "--out-md",
+  ]) || process.cwd();
   const outputPath = argValue(args, "--out");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
+  const maxFiles = positiveIntegerArg(args, "--max-files", 500);
+  if (!maxFiles) {
+    console.error("--max-files must be a positive integer.");
+    return 2;
+  }
   let report;
   try {
-    report = buildInventoryReport(rootArg);
+    report = buildInventoryReport(rootArg, { maxFiles });
   } catch (error) {
     console.error(error.message);
     return 2;
@@ -1300,39 +1561,52 @@ function inventory(args) {
 
   const json = `${JSON.stringify(report, null, 2)}\n`;
   if (outputPath) {
-    fs.writeFileSync(path.resolve(outputPath), json);
+    writeTextFile(outputPath, json);
     console.log(`[deepseek-compat-kit] wrote inventory report: ${outputPath}`);
   } else {
     process.stdout.write(json);
   }
 
   if (markdownPath) {
-    fs.writeFileSync(path.resolve(markdownPath), renderInventoryMarkdown(report));
+    writeTextFile(markdownPath, renderInventoryMarkdown(report));
     console.log(`[deepseek-compat-kit] wrote markdown inventory report: ${markdownPath}`);
   }
 
   return 0;
 }
 
-function buildInventoryReport(rootArg) {
+function buildInventoryReport(rootArg, options = {}) {
   const root = path.resolve(rootArg);
   if (!fs.existsSync(root)) {
     throw new Error(`Inventory path does not exist: ${root}`);
   }
 
-  const report = createInventoryReport(root);
-  const files = collectInventoryFiles(root);
+  const maxFiles = options.maxFiles || 500;
+  const report = createInventoryReport(root, { maxFiles });
+  const { files, limitReached } = collectInventoryFiles(root, maxFiles);
   report.summary.files_scanned = files.length;
+  report.summary.max_files = maxFiles;
+  report.summary.scan_limit_reached = limitReached;
 
   for (const filePath of files) {
     inspectInventoryFile(filePath, root, report);
+  }
+
+  if (limitReached) {
+    addInventoryFinding(report, {
+      level: "WARN",
+      code: "DSK_INV_SCAN_LIMIT",
+      file: "",
+      line: 0,
+      message: `Inventory stopped after scanning ${maxFiles} candidate file(s). Re-run against a narrower --path for a complete report.`,
+    });
   }
 
   summarizeInventory(report);
   return report;
 }
 
-function createInventoryReport(root) {
+function createInventoryReport(root, options = {}) {
   return {
     version: "0.1",
     generated_at: new Date().toISOString(),
@@ -1340,6 +1614,8 @@ function createInventoryReport(root) {
     scope: "explicit local path only; no network calls; secret values are not recorded",
     summary: {
       files_scanned: 0,
+      max_files: options.maxFiles || 500,
+      scan_limit_reached: false,
       findings: 0,
       warnings: 0,
       deepseek_references: 0,
@@ -1352,14 +1628,19 @@ function createInventoryReport(root) {
   };
 }
 
-function collectInventoryFiles(root) {
+function collectInventoryFiles(root, maxFiles = 500) {
   const files = [];
   const rootStat = fs.statSync(root);
-  if (rootStat.isFile()) return shouldScanInventoryFile(root) ? [root] : [];
+  if (rootStat.isFile()) return { files: shouldScanInventoryFile(root) ? [root] : [], limitReached: false, maxFiles };
 
   const stack = [root];
-  const maxFiles = 500;
-  while (stack.length > 0 && files.length < maxFiles) {
+  let limitReached = false;
+  while (stack.length > 0) {
+    if (files.length >= maxFiles) {
+      limitReached = true;
+      break;
+    }
+
     const current = stack.pop();
     let entries;
     try {
@@ -1368,7 +1649,13 @@ function collectInventoryFiles(root) {
       continue;
     }
 
-    for (const entry of entries) {
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (files.length >= maxFiles) {
+        limitReached = true;
+        break;
+      }
+
       const fullPath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         if (!shouldSkipInventoryDirectory(entry.name)) stack.push(fullPath);
@@ -1377,12 +1664,15 @@ function collectInventoryFiles(root) {
 
       if (entry.isFile() && shouldScanInventoryFile(fullPath)) {
         files.push(fullPath);
-        if (files.length >= maxFiles) break;
+        if (files.length >= maxFiles && (index < entries.length - 1 || stack.length > 0)) {
+          limitReached = true;
+          break;
+        }
       }
     }
   }
 
-  return files;
+  return { files, limitReached, maxFiles };
 }
 
 function shouldSkipInventoryDirectory(name) {
@@ -1552,6 +1842,10 @@ function detectInventoryTargets(line, filePath) {
     targets.push({ name: "roo-code", reason: "Roo Code reference detected." });
   }
 
+  if (/\bopenrouter\b/.test(lowered) || lowered.includes("openrouter.ai")) {
+    targets.push({ name: "openrouter", reason: "OpenRouter relay reference detected." });
+  }
+
   return dedupeTargets(targets);
 }
 
@@ -1568,12 +1862,19 @@ function extractInventoryUrls(line) {
   const urls = [];
   for (const match of line.matchAll(/https?:\/\/[^\s"'`,)<>{}\\]+/g)) {
     const url = match[0].replace(/[.;]+$/, "");
-    const lowered = url.toLowerCase();
-    if (lowered.includes("deepseek") || lowered.includes("127.0.0.1:8787") || lowered.includes("localhost:8787")) {
+    if (isInventoryProviderUrlCandidate(url)) {
       urls.push(url);
     }
   }
   return [...new Set(urls)];
+}
+
+function isInventoryProviderUrlCandidate(url) {
+  const lowered = String(url).toLowerCase();
+  return lowered.includes("deepseek")
+    || lowered.includes("openrouter.ai")
+    || lowered.includes("127.0.0.1:8787")
+    || lowered.includes("localhost:8787");
 }
 
 function extractInventoryModels(line) {
@@ -1581,11 +1882,17 @@ function extractInventoryModels(line) {
 }
 
 function detectInventoryEnvSecret(line) {
-  const match = line.match(/^\s*([A-Z0-9_]*(?:DEEPSEEK|OPENAI)[A-Z0-9_]*(?:KEY|TOKEN|SECRET)|(?:DEEPSEEK|OPENAI)_API_KEY)\s*=\s*(.+?)\s*$/i);
+  const match = line.match(/^\s*([A-Z_][A-Z0-9_]*(?:API_KEY|KEY|TOKEN|SECRET))\s*=\s*(.+?)\s*$/i);
   if (!match) return undefined;
+  const variable = match[1];
+  if (isLikelyPublicInventoryVariable(variable)) return undefined;
   const value = match[2].replace(/^['"]|['"]$/g, "").trim();
   if (!value || /^(your_|sk-\.\.\.|<|xxx|changeme|example|placeholder)/i.test(value)) return undefined;
-  return match[1];
+  return variable;
+}
+
+function isLikelyPublicInventoryVariable(variable) {
+  return /^(?:PUBLIC|VITE|NEXT_PUBLIC|NUXT_PUBLIC|EXPO_PUBLIC)_/i.test(variable);
 }
 
 function containsRawSecret(line) {
@@ -1640,7 +1947,15 @@ function buildInventoryRecommendations(report) {
     });
   }
 
-  if (report.summary.warnings > 0) {
+  if (report.summary.scan_limit_reached) {
+    recommendations.push({
+      code: "DSK_REC_NARROW_INVENTORY_PATH",
+      command: "npx deepseek-compat-kit inventory --path <narrower-project-or-config-dir>",
+      message: "Inventory reached the scan file limit; re-run against a narrower path for a complete report.",
+    });
+  }
+
+  if (hasInventorySecretWarnings(report)) {
     recommendations.push({
       code: "DSK_REC_REDACT_SECRETS",
       command: "Move API keys to environment variables or a local secret store before sharing reports.",
@@ -1649,6 +1964,10 @@ function buildInventoryRecommendations(report) {
   }
 
   return recommendations;
+}
+
+function hasInventorySecretWarnings(report) {
+  return report.findings.some((finding) => ["DSK_INV_SECRET_PRESENT", "DSK_INV_RAW_SECRET"].includes(finding.code));
 }
 
 function renderInventoryRecommendations(report) {
@@ -1670,6 +1989,7 @@ function renderInventoryMarkdown(report) {
     "## Summary",
     "",
     `Files scanned: ${report.summary.files_scanned}`,
+    `Scan limit: ${report.summary.scan_limit_reached ? `reached (${report.summary.max_files} files)` : `not reached (${report.summary.max_files} files)`}`,
     `Findings: ${report.summary.findings}`,
     `Warnings: ${report.summary.warnings}`,
     `DeepSeek references: ${report.summary.deepseek_references}`,
@@ -1710,12 +2030,15 @@ function renderInventoryMarkdown(report) {
 }
 
 function recipes(args) {
+  if (wantsHelp(args)) return printUsage("recipes");
+
   const target = normalizeRecipeTarget(argValue(args, "--target") || firstPositional(args));
   if (!target) {
     console.log("[deepseek-compat-kit] available recipes:");
     console.log("- opencode: print-only DeepSeek/OpenAI-compatible baseURL recipe");
     console.log("- cline: print-only Cline OpenAI-compatible baseURL recipe");
     console.log("- roo-code: print-only legacy Roo Code OpenAI-compatible baseURL recipe");
+    console.log("- openrouter: print-only OpenRouter relay header/probe recipe");
     console.log("- openai-js: print-only OpenAI JS SDK baseURL recipe");
     console.log("- langchain-js: print-only LangChain JS ChatOpenAI baseURL recipe");
     return 0;
@@ -1723,7 +2046,7 @@ function recipes(args) {
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown recipe "${target}". Available recipes: opencode, cline, roo-code, openai-js, langchain-js`);
+    console.error(`Unknown recipe "${target}". Available recipes: opencode, cline, roo-code, openrouter, openai-js, langchain-js`);
     return 2;
   }
 
@@ -1732,23 +2055,37 @@ function recipes(args) {
 }
 
 function doctor(args) {
-  const target = normalizeRecipeTarget(argValue(args, "--target") || firstPositional(args));
+  if (wantsHelp(args)) return printUsage("doctor");
+
+  const target = normalizeRecipeTarget(argValue(args, "--target") || firstPositional(args, [
+    "--target",
+    "--path",
+    "-p",
+    "--max-files",
+    "--markdown",
+    "--out-md",
+  ]));
   const rootArg = argValue(args, "--path") || argValue(args, "-p");
   const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
+  const maxFiles = positiveIntegerArg(args, "--max-files", 500);
+  if (!maxFiles) {
+    console.error("--max-files must be a positive integer.");
+    return 2;
+  }
   if (!target) {
-    console.error("Usage: deepseek-compat-kit doctor --target auto|opencode|cline|roo-code|openai-js|langchain-js [--path <dir>] [--markdown <doctor.md>] [--print]");
+    console.error(commandUsage.doctor);
     return 2;
   }
 
   if (target === "auto") {
     if (!rootArg) {
-      console.error("Usage: deepseek-compat-kit doctor --target auto --path <dir> [--markdown <doctor.md>] [--print]");
+      console.error("Usage: deepseek-compat-kit doctor --target auto --path <dir> [--max-files 500] [--markdown <doctor.md>] [--print]");
       return 2;
     }
 
     let inventoryReport;
     try {
-      inventoryReport = buildInventoryReport(rootArg);
+      inventoryReport = buildInventoryReport(rootArg, { maxFiles });
     } catch (error) {
       console.error(error.message);
       return 2;
@@ -1759,7 +2096,7 @@ function doctor(args) {
       .filter(Boolean);
     const markdown = renderAutoDoctorMarkdown({ inventoryReport, recipes });
     if (markdownPath) {
-      fs.writeFileSync(path.resolve(markdownPath), markdown);
+      writeTextFile(markdownPath, markdown);
       console.log(`[deepseek-compat-kit] wrote doctor report: ${markdownPath}`);
     }
 
@@ -1772,14 +2109,14 @@ function doctor(args) {
 
   const recipe = recipeFor(target);
   if (!recipe) {
-    console.error(`Unknown doctor target "${target}". Available targets: auto, opencode, cline, roo-code, openai-js, langchain-js`);
+    console.error(`Unknown doctor target "${target}". Available targets: auto, opencode, cline, roo-code, openrouter, openai-js, langchain-js`);
     return 2;
   }
 
   let inventoryReport;
   if (rootArg) {
     try {
-      inventoryReport = buildInventoryReport(rootArg);
+      inventoryReport = buildInventoryReport(rootArg, { maxFiles });
     } catch (error) {
       console.error(error.message);
       return 2;
@@ -1788,7 +2125,7 @@ function doctor(args) {
 
   const markdown = renderDoctorMarkdown({ recipe, inventoryReport });
   if (markdownPath) {
-    fs.writeFileSync(path.resolve(markdownPath), markdown);
+    writeTextFile(markdownPath, markdown);
     console.log(`[deepseek-compat-kit] wrote doctor report: ${markdownPath}`);
   }
 
@@ -1814,6 +2151,7 @@ function renderDoctorMarkdown({ recipe, inventoryReport }) {
       "",
       `Root: \`${inventoryReport.root}\``,
       `Files scanned: ${inventoryReport.summary.files_scanned}`,
+      `Scan limit: ${inventoryReport.summary.scan_limit_reached ? `reached (${inventoryReport.summary.max_files} files)` : `not reached (${inventoryReport.summary.max_files} files)`}`,
       `Findings: ${inventoryReport.summary.findings}`,
       `Warnings: ${inventoryReport.summary.warnings}`,
       `DeepSeek references: ${inventoryReport.summary.deepseek_references}`,
@@ -1890,6 +2228,7 @@ function renderAutoDoctorMarkdown({ inventoryReport, recipes }) {
     "",
     `Root: \`${inventoryReport.root}\``,
     `Files scanned: ${inventoryReport.summary.files_scanned}`,
+    `Scan limit: ${inventoryReport.summary.scan_limit_reached ? `reached (${inventoryReport.summary.max_files} files)` : `not reached (${inventoryReport.summary.max_files} files)`}`,
     `Findings: ${inventoryReport.summary.findings}`,
     `Warnings: ${inventoryReport.summary.warnings}`,
     `DeepSeek references: ${inventoryReport.summary.deepseek_references}`,
@@ -1962,6 +2301,7 @@ function normalizeRecipeTarget(value) {
   if (["opencode", "open-code", "open_code"].includes(normalized)) return "opencode";
   if (["cline", "cline-bot", "clinebot"].includes(normalized)) return "cline";
   if (["roo-code", "roocode", "roo", "roo_code"].includes(normalized)) return "roo-code";
+  if (["openrouter", "open-router", "open_router", "openrouter-ai"].includes(normalized)) return "openrouter";
   if (["openai-js", "openai_js", "openai", "openai-sdk", "openai-js-sdk"].includes(normalized)) return "openai-js";
   if (["langchain-js", "langchain_js", "langchain", "langchain-openai"].includes(normalized)) return "langchain-js";
   return normalized;
@@ -1971,6 +2311,7 @@ function recipeFor(target) {
   if (target === "opencode") return opencodeRecipe();
   if (target === "cline") return clineRecipe();
   if (target === "roo-code") return rooCodeRecipe();
+  if (target === "openrouter") return openRouterRecipe();
   if (target === "openai-js") return openAiJsRecipe();
   if (target === "langchain-js") return langChainJsRecipe();
   return undefined;
@@ -2239,10 +2580,82 @@ function opencodeRecipe() {
   };
 }
 
+function openRouterRecipe() {
+  const markdown = [
+    "# OpenRouter + DeepSeek CompatKit Recipe",
+    "",
+    "Use this when an OpenAI-compatible client, local proxy, or framework routes DeepSeek traffic through OpenRouter and you want a repeatable capability report before running a real Agent task.",
+    "",
+    "Safety boundary:",
+    "- This recipe is print-only.",
+    "- It does not edit OpenRouter, SDK, framework, or local proxy configuration files.",
+    "- It treats OpenRouter as a relay provider. Passing this recipe is not proof that every model route or provider behind OpenRouter behaves identically.",
+    "- Live OpenRouter end-to-end validation is pending.",
+    "",
+    "1. Put credentials and optional relay attribution in environment variables:",
+    "",
+    "```bash",
+    "export OPENROUTER_API_KEY=sk-or-...",
+    "export OPENROUTER_APP_URL=https://example.com",
+    "export OPENROUTER_APP_TITLE=\"DeepSeek CompatKit Probe\"",
+    "```",
+    "",
+    "2. Probe OpenRouter directly:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit probe \\",
+    "  --endpoint https://openrouter.ai/api/v1 \\",
+    "  --name \"OpenRouter DeepSeek\" \\",
+    "  --model deepseek/deepseek-chat \\",
+    "  --profile relay \\",
+    "  --api-key-env OPENROUTER_API_KEY \\",
+    "  --header-env \"HTTP-Referer=OPENROUTER_APP_URL\" \\",
+    "  --header-env \"X-Title=OPENROUTER_APP_TITLE\" \\",
+    "  --out ./reports/openrouter-deepseek.json \\",
+    "  --markdown ./reports/OpenRouter_DeepSeek.md",
+    "```",
+    "",
+    "3. If you need the local proxy in the middle, start it with the same upstream route:",
+    "",
+    "```bash",
+    "OPENROUTER_API_KEY=sk-or-... npx deepseek-compat-kit proxy \\",
+    "  --port 8787 \\",
+    "  --upstream https://openrouter.ai/api/v1 \\",
+    "  --upstream-api-key-env OPENROUTER_API_KEY \\",
+    "  --upstream-header-env \"HTTP-Referer=OPENROUTER_APP_URL\" \\",
+    "  --upstream-header-env \"X-Title=OPENROUTER_APP_TITLE\"",
+    "```",
+    "",
+    "Then point your OpenAI-compatible client at:",
+    "",
+    "```text",
+    "http://127.0.0.1:8787/v1",
+    "```",
+    "",
+    "4. Compare OpenRouter with other endpoints:",
+    "",
+    "```bash",
+    "npx deepseek-compat-kit matrix ./reports --require agent --markdown ./Provider_Matrix.md",
+    "```",
+    "",
+    "Troubleshooting:",
+    "- If `chat_completions` fails, confirm the model route and whether your OpenRouter account can access it.",
+    "- If `strict_schema` warns, compare the same request against the official DeepSeek endpoint before changing application code.",
+    "- If streaming warns, try a non-streaming Agent run first and keep the JSON probe report for provider triage.",
+  ].join("\n");
+
+  return {
+    title: "OpenRouter",
+    markdown,
+  };
+}
+
 function lintSchema(args) {
-  const filePath = args[0];
+  if (wantsHelp(args)) return printUsage("lint-schema");
+
+  const filePath = firstPositional(args, ["--base-url"]);
   if (!filePath) {
-    console.error("Usage: deepseek-compat-kit lint-schema <schema.json> [--strict] [--base-url <url>]");
+    console.error(commandUsage["lint-schema"]);
     return 2;
   }
 
@@ -2321,14 +2734,28 @@ function lintSchemaNode(node, currentPath, findings) {
 }
 
 function diagnose(args) {
-  const filePath = args[0];
+  if (wantsHelp(args)) return printUsage("diagnose");
+
+  const filePath = firstPositional(args, ["--out", "--markdown", "--out-md"]);
+  const outputPath = argValue(args, "--out");
+  const markdownPath = argValue(args, "--markdown") || argValue(args, "--out-md");
+  const failOnWarn = args.includes("--fail-on-warn");
   if (!filePath) {
-    console.error("Usage: deepseek-compat-kit diagnose <run.jsonl>");
+    console.error(commandUsage.diagnose);
     return 2;
   }
 
   const events = readJsonl(filePath);
   const findings = diagnoseEvents(events);
+  const report = createDiagnoseReport({ filePath, events, findings, failOnWarn });
+  if (outputPath) {
+    writeTextFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+    console.log(`[deepseek-compat-kit] wrote diagnose JSON report: ${outputPath}`);
+  }
+  if (markdownPath) {
+    writeTextFile(markdownPath, renderDiagnoseMarkdown(report));
+    console.log(`[deepseek-compat-kit] wrote diagnose markdown report: ${markdownPath}`);
+  }
 
   if (findings.length === 0) {
     console.log("[deepseek-compat-kit] no known DeepSeek V4 compatibility failures detected");
@@ -2339,7 +2766,121 @@ function diagnose(args) {
     console.log(`${finding.level} ${finding.code} ${finding.path}: ${finding.message}`);
   }
 
-  return findings.some((finding) => finding.level === "ERROR") ? 1 : 0;
+  return report.gate.failed ? 1 : 0;
+}
+
+function createDiagnoseReport({ filePath, events, findings, failOnWarn = false }) {
+  const summary = summarizeDiagnoseEvents(events);
+  const hasErrors = findings.some((finding) => finding.level === "ERROR");
+  const hasWarnings = findings.some((finding) => finding.level === "WARN");
+  return {
+    tool: "deepseek-compat-kit",
+    report_type: "diagnose",
+    source: filePath,
+    generated_at: new Date().toISOString(),
+    summary: {
+      status: hasErrors ? "FAIL" : findings.length > 0 ? "WARN" : "PASS",
+      events: events.length,
+      requests: summary.requests,
+      responses: summary.responses,
+      assistant_tool_call_messages: summary.assistantToolCallMessages,
+      assistant_messages_with_reasoning_content: summary.assistantReasoningMessages,
+      findings: findings.length,
+    },
+    gate: {
+      fail_on_warn: Boolean(failOnWarn),
+      failed: hasErrors || (failOnWarn && hasWarnings),
+    },
+    findings: findings.map(summarizeFinding),
+    next_steps: diagnoseNextSteps(findings),
+    privacy_notes: [
+      "This report is derived from structural JSONL events.",
+      "Do not attach raw application logs containing API keys, prompt text, private tool results, or full reasoning bodies.",
+    ],
+  };
+}
+
+function renderDiagnoseMarkdown(report) {
+  const lines = [
+    "# DeepSeek CompatKit Diagnose Report",
+    "",
+    `Source: \`${escapeMarkdownTable(report.source)}\``,
+    `Generated: \`${report.generated_at}\``,
+    "",
+    "## Summary",
+    "",
+    `- Status: ${report.summary.status}`,
+    `- Events: ${report.summary.events}`,
+    `- Requests: ${report.summary.requests}`,
+    `- Responses: ${report.summary.responses}`,
+    `- Assistant tool-call messages: ${report.summary.assistant_tool_call_messages}`,
+    `- Assistant messages with reasoning_content: ${report.summary.assistant_messages_with_reasoning_content}`,
+    `- Findings: ${report.summary.findings}`,
+    `- Fail on warn: ${report.gate.fail_on_warn ? "yes" : "no"}`,
+    `- Gate failed: ${report.gate.failed ? "yes" : "no"}`,
+    "",
+  ];
+
+  if (report.findings.length === 0) {
+    lines.push("No known DeepSeek V4 compatibility failures were detected.", "");
+  } else {
+    lines.push("## Findings", "");
+    lines.push("| Level | Code | Path | Message |");
+    lines.push("| --- | --- | --- | --- |");
+    for (const finding of report.findings) {
+      lines.push(`| ${finding.level} | \`${escapeMarkdownTable(finding.code)}\` | \`${escapeMarkdownTable(finding.path)}\` | ${escapeMarkdownTable(finding.message)} |`);
+    }
+    lines.push("");
+  }
+
+  lines.push("## Next Steps", "");
+  for (const step of report.next_steps) lines.push(`- ${step}`);
+  lines.push("");
+  lines.push("## Privacy Notes", "");
+  for (const note of report.privacy_notes) lines.push(`- ${note}`);
+  lines.push("");
+
+  return `${lines.join("\n")}\n`;
+}
+
+function diagnoseNextSteps(findings) {
+  if (findings.some((finding) => finding.code === "DSK_REASONING_001")) {
+    return [
+      "Preserve `reasoning_content` on assistant tool-call messages when sending follow-up tool results.",
+      "If using the local proxy, route the whole conversation through the proxy from turn one.",
+      "If this came from `proxy --diagnostics-log`, attach this Markdown report plus the sanitized JSONL when opening an upstream issue.",
+    ];
+  }
+  return [
+    "If the issue still reproduces, capture a fresh run with `proxy --diagnostics-log ./logs/proxy.jsonl`.",
+    "Run `probe` against the same endpoint to separate framework behavior from provider behavior.",
+  ];
+}
+
+function summarizeDiagnoseEvents(events) {
+  const summary = {
+    requests: 0,
+    responses: 0,
+    assistantToolCallMessages: 0,
+    assistantReasoningMessages: 0,
+  };
+
+  for (const event of events) {
+    if (event?.type === "request") summary.requests += 1;
+    if (event?.type === "response") summary.responses += 1;
+
+    const messages = Array.isArray(event?.messages)
+      ? event.messages
+      : event?.message
+        ? [event.message]
+        : [];
+    for (const message of messages) {
+      if (message?.role === "assistant" && Array.isArray(message.tool_calls)) summary.assistantToolCallMessages += 1;
+      if (message?.role === "assistant" && message.reasoning_content) summary.assistantReasoningMessages += 1;
+    }
+  }
+
+  return summary;
 }
 
 function diagnoseEvents(events) {
@@ -2347,6 +2888,8 @@ function diagnoseEvents(events) {
   const reasoningByToolCall = new Map();
 
   events.forEach((event, eventIndex) => {
+    findings.push(...extractEmbeddedDiagnosticFindings(event, eventIndex));
+
     const message = event?.message;
     if (event?.type === "response" && message?.reasoning_content && Array.isArray(message.tool_calls)) {
       for (const call of message.tool_calls) {
@@ -2374,17 +2917,42 @@ function diagnoseEvents(events) {
   return findings;
 }
 
+function extractEmbeddedDiagnosticFindings(event, eventIndex) {
+  const findings = [];
+  const groups = [
+    ["repair.findings", event?.repair?.findings],
+    ["schema_findings", event?.schema_findings],
+  ];
+
+  for (const [label, items] of groups) {
+    if (!Array.isArray(items)) continue;
+    items.forEach((item, itemIndex) => {
+      if (!item?.code || !item?.message) return;
+      findings.push({
+        level: item.level || "WARN",
+        code: item.code,
+        path: `events[${eventIndex}].${label}[${itemIndex}]${item.path ? ` ${item.path}` : ""}`,
+        message: item.message,
+      });
+    });
+  }
+
+  return findings;
+}
+
 function sanitize(args) {
-  const inputPath = args[0];
+  if (wantsHelp(args)) return printUsage("sanitize");
+
+  const inputPath = firstPositional(args, ["--out"]);
   const outputPath = argValue(args, "--out");
   if (!inputPath || !outputPath) {
-    console.error("Usage: deepseek-compat-kit sanitize <run.jsonl> --out <safe.jsonl>");
+    console.error(commandUsage.sanitize);
     return 2;
   }
 
   const events = readJsonl(inputPath);
   const sanitized = events.map((event) => sanitizeValue(event, { role: undefined, key: undefined }));
-  fs.writeFileSync(path.resolve(outputPath), `${sanitized.map((event) => JSON.stringify(event)).join("\n")}\n`);
+  writeTextFile(outputPath, `${sanitized.map((event) => JSON.stringify(event)).join("\n")}\n`);
   console.log(`[deepseek-compat-kit] wrote sanitized replay fixture: ${outputPath}`);
   return 0;
 }
@@ -2446,11 +3014,43 @@ function sha256(text) {
 }
 
 function startProxy(args) {
+  if (wantsHelp(args)) return printUsage("proxy");
+
   const port = argValue(args, "--port") || "8787";
   const upstream = normalizeBaseUrl(argValue(args, "--upstream") || process.env.DEEPSEEK_COMPAT_UPSTREAM || "https://api.deepseek.com");
-  const state = createProxyState();
+  const upstreamApiKeyEnv = argValue(args, "--upstream-api-key-env") || "DEEPSEEK_API_KEY";
+  const upstreamApiKey = upstreamApiKeyEnv ? process.env[upstreamApiKeyEnv] : "";
+  const upstreamTimeoutMsRaw = argValue(args, "--upstream-timeout-ms") || process.env.DEEPSEEK_COMPAT_UPSTREAM_TIMEOUT_MS || "30000";
+  const upstreamTimeoutMs = Number(upstreamTimeoutMsRaw);
+  const stateTtlMsRaw = argValue(args, "--state-ttl-ms") || process.env.DEEPSEEK_COMPAT_STATE_TTL_MS || "3600000";
+  const stateTtlMs = Number(stateTtlMsRaw);
+  const diagnosticsLogPath = argValue(args, "--diagnostics-log") || process.env.DEEPSEEK_COMPAT_DIAGNOSTICS_LOG || "";
+  const literalUpstreamHeaders = parseProbeHeaders(argValues(args, "--upstream-header"));
+  const envUpstreamHeaders = parseProbeHeaderEnvs(argValues(args, "--upstream-header-env"), process.env);
+  if (!Number.isInteger(upstreamTimeoutMs) || upstreamTimeoutMs <= 0) {
+    console.error("--upstream-timeout-ms must be a positive integer.");
+    return 2;
+  }
+  if (!Number.isInteger(stateTtlMs) || stateTtlMs <= 0) {
+    console.error("--state-ttl-ms must be a positive integer.");
+    return 2;
+  }
+  if (!literalUpstreamHeaders) {
+    console.error("--upstream-header must use the form \"Name: Value\" and valid HTTP token header names.");
+    return 2;
+  }
+  if (envUpstreamHeaders.error) {
+    console.error(envUpstreamHeaders.error.replace(/--header-env/g, "--upstream-header-env"));
+    return 2;
+  }
+  if (diagnosticsLogPath) {
+    fs.mkdirSync(path.dirname(path.resolve(diagnosticsLogPath)), { recursive: true });
+    fs.appendFileSync(path.resolve(diagnosticsLogPath), "");
+  }
+  const upstreamHeaders = { ...envUpstreamHeaders.headers, ...literalUpstreamHeaders };
+  const state = createProxyState({ stateTtlMs });
   const server = http.createServer((request, response) => {
-    handleProxyRequest({ request, response, upstream, state }).catch((error) => {
+    handleProxyRequest({ request, response, upstream, state, upstreamHeaders, upstreamApiKey, upstreamApiKeyEnv, upstreamTimeoutMs, diagnosticsLogPath }).catch((error) => {
       console.error(`[deepseek-compat-kit] proxy error: ${error.message}`);
       if (!response.headersSent) {
         response.writeHead(502, { "content-type": "application/json" });
@@ -2460,25 +3060,51 @@ function startProxy(args) {
   });
 
   server.listen(Number(port), "127.0.0.1", () => {
-    console.error(`[deepseek-compat-kit] proxy alpha listening on http://127.0.0.1:${port}/v1`);
+    console.error(`[deepseek-compat-kit] proxy listening on http://127.0.0.1:${port}/v1`);
     console.error(`[deepseek-compat-kit] upstream: ${upstream}`);
-    console.error("[deepseek-compat-kit] boundary: reasoning_content repair is stateful best-effort, not stateless magic.");
+    console.error(`[deepseek-compat-kit] upstream api key env: ${upstreamApiKeyEnv || "none"} (${upstreamApiKey ? "present" : "not set"})`);
+    console.error(`[deepseek-compat-kit] upstream response timeout: ${upstreamTimeoutMs} ms`);
+    console.error(`[deepseek-compat-kit] reasoning state ttl: ${stateTtlMs} ms`);
+    if (Object.keys(upstreamHeaders).length > 0) {
+      console.error(`[deepseek-compat-kit] upstream extra headers: ${Object.keys(upstreamHeaders).join(", ")}`);
+    }
+    if (diagnosticsLogPath) {
+      console.error(`[deepseek-compat-kit] diagnostics log: ${diagnosticsLogPath}`);
+    }
+    console.error("[deepseek-compat-kit] boundary: reasoning_content repair is stateful conservative, not stateless magic.");
   });
 
   return undefined;
 }
 
-function createProxyState() {
+function createProxyState({ stateTtlMs = 3600000 } = {}) {
   return {
     reasoningByToolCallId: new Map(),
     maxEntries: 2000,
+    stateTtlMs,
+    nextSourceTurnId: 0,
   };
 }
 
-async function handleProxyRequest({ request, response, upstream, state }) {
+async function handleProxyRequest({ request, response, upstream, state, upstreamHeaders = {}, upstreamApiKey = "", upstreamApiKeyEnv = "DEEPSEEK_API_KEY", upstreamTimeoutMs = 30000, diagnosticsLogPath = "" }) {
   if (request.method === "GET" && request.url === "/health") {
+    pruneProxyState(state);
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ok: true, name: "deepseek-compat-kit" }));
+    response.end(JSON.stringify({
+      ok: true,
+      name: "deepseek-compat-kit",
+      mode: "proxy-alpha",
+      upstream,
+      upstream_api_key_env: upstreamApiKeyEnv || "none",
+      upstream_api_key_present: Boolean(upstreamApiKey),
+      upstream_response_timeout_ms: upstreamTimeoutMs,
+      upstream_extra_header_names: Object.keys(upstreamHeaders),
+      reasoning_state: {
+        cache_entries: state.reasoningByToolCallId.size,
+        max_entries: state.maxEntries,
+        ttl_ms: state.stateTtlMs,
+      },
+    }));
     return;
   }
 
@@ -2494,6 +3120,12 @@ async function handleProxyRequest({ request, response, upstream, state }) {
   const body = parseProxyJson(bodyText);
   const repair = repairReasoningContent(body, state);
   const schemaFindings = lintRequestSchemas(body, upstream);
+  appendProxyDiagnostics(diagnosticsLogPath, summarizeProxyRequestEvent({
+    body,
+    pathname,
+    repair,
+    schemaFindings,
+  }));
 
   for (const finding of [...repair.findings, ...schemaFindings]) {
     console.error(`${finding.level} ${finding.code} ${finding.path}: ${finding.message}`);
@@ -2501,23 +3133,50 @@ async function handleProxyRequest({ request, response, upstream, state }) {
 
   const upstreamPath = pathname === "/v1/chat/completions" ? "/chat/completions" : pathname;
   const upstreamUrl = `${upstream}${upstreamPath}${requestUrl.search}`;
-  const upstreamResponse = await fetch(upstreamUrl, {
+  const upstreamResponse = await fetchProxyUpstream(upstreamUrl, {
     method: "POST",
-    headers: buildUpstreamHeaders(request.headers, body),
+    headers: buildUpstreamHeaders(request.headers, body, upstreamHeaders, upstreamApiKey, upstreamApiKeyEnv),
     body: JSON.stringify(body),
-  });
+  }, upstreamTimeoutMs);
 
   response.writeHead(upstreamResponse.status, buildResponseHeaders(upstreamResponse.headers, repair, schemaFindings));
 
   const contentType = upstreamResponse.headers.get("content-type") || "";
   if (body.stream || contentType.includes("text/event-stream")) {
-    await pipeStreamingResponse(upstreamResponse, response, state);
+    const streamState = await pipeStreamingResponse(upstreamResponse, response, state);
+    appendProxyDiagnostics(diagnosticsLogPath, ...summarizeStreamingResponseEvents({
+      status: upstreamResponse.status,
+      contentType,
+      streamState,
+      state,
+    }));
     return;
   }
 
   const text = await upstreamResponse.text();
   rememberNonStreamingResponse(text, state);
+  appendProxyDiagnostics(diagnosticsLogPath, ...summarizeNonStreamingResponseEvents({
+    status: upstreamResponse.status,
+    contentType,
+    text,
+    state,
+  }));
   response.end(text);
+}
+
+async function fetchProxyUpstream(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`upstream did not respond within ${timeoutMs} ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function readRequestBody(request) {
@@ -2547,23 +3206,51 @@ function parseProxyJson(bodyText) {
 function repairReasoningContent(body, state) {
   const findings = [];
   let injected = 0;
+  pruneProxyState(state);
   if (!Array.isArray(body.messages)) return { injected, findings };
 
   body.messages.forEach((message, messageIndex) => {
     if (message?.role !== "assistant" || !Array.isArray(message.tool_calls) || message.reasoning_content) return;
+    const toolCallIds = message.tool_calls.map((call) => call?.id).filter(Boolean);
+    const missingIdCount = message.tool_calls.length - toolCallIds.length;
     const cached = message.tool_calls
       .map((call) => call?.id && state.reasoningByToolCallId.get(call.id))
       .filter(Boolean);
-    if (cached.length === 0) return;
+    if (cached.length === 0) {
+      if (toolCallIds.length > 0 || missingIdCount > 0) {
+        const missingDetails = [
+          ...toolCallIds,
+          ...(missingIdCount > 0 ? [`${missingIdCount} tool call(s) without id`] : []),
+        ];
+        findings.push(warn(
+          "DSK_REASONING_002",
+          `messages[${messageIndex}]`,
+          `no cached reasoning_content was available for ${missingDetails.join(", ")}. Route the whole conversation through the proxy from turn one and keep state within the configured TTL.`,
+        ));
+      }
+      return;
+    }
 
-    const missingIds = message.tool_calls
-      .map((call) => call?.id)
-      .filter((id) => id && !state.reasoningByToolCallId.has(id));
-    if (missingIds.length > 0) {
+    const missingIds = toolCallIds.filter((id) => !state.reasoningByToolCallId.has(id));
+    if (missingIds.length > 0 || missingIdCount > 0) {
+      const missingDetails = [
+        ...missingIds,
+        ...(missingIdCount > 0 ? [`${missingIdCount} tool call(s) without id`] : []),
+      ];
       findings.push(error(
         "DSK_REASONING_002",
         `messages[${messageIndex}]`,
-        `some tool calls have no cached reasoning_content: ${missingIds.join(", ")}. The proxy cannot reconstruct content it never saw.`,
+        `some tool calls have no cached reasoning_content: ${missingDetails.join(", ")}. The proxy cannot reconstruct content it never saw.`,
+      ));
+      return;
+    }
+
+    const sourceTurnIds = [...new Set(cached.map((entry) => entry.sourceTurnId).filter(Boolean))];
+    if (sourceTurnIds.length > 1) {
+      findings.push(error(
+        "DSK_REASONING_004",
+        `messages[${messageIndex}]`,
+        "cached reasoning_content came from multiple assistant turns. Refused to restore it to avoid cross-turn or cross-session mixing.",
       ));
       return;
     }
@@ -2574,7 +3261,7 @@ function repairReasoningContent(body, state) {
     findings.push(warn(
       "DSK_REASONING_003",
       `messages[${messageIndex}]`,
-      `injected cached reasoning_content for ${cached.length} tool call(s).`,
+      `restored cached reasoning_content for ${cached.length} tool call(s).`,
     ));
   });
 
@@ -2600,16 +3287,17 @@ function lintRequestSchemas(body, upstream) {
   return findings;
 }
 
-function buildUpstreamHeaders(headers, body) {
+function buildUpstreamHeaders(headers, body, extraHeaders = {}, upstreamApiKey = "", _upstreamApiKeyEnv = "DEEPSEEK_API_KEY") {
   const output = {
     "content-type": "application/json",
     "accept": firstHeader(headers.accept) || "application/json",
     "user-agent": "deepseek-compat-kit/0.1",
+    ...extraHeaders,
   };
 
   const authorization = firstHeader(headers.authorization);
   if (authorization) output.authorization = authorization;
-  if (!output.authorization && process.env.DEEPSEEK_API_KEY) output.authorization = `Bearer ${process.env.DEEPSEEK_API_KEY}`;
+  if (!output.authorization && upstreamApiKey) output.authorization = `Bearer ${upstreamApiKey}`;
   const requestId = firstHeader(headers["x-request-id"]);
   if (requestId) output["x-request-id"] = requestId;
   if (body.stream) output.accept = "text/event-stream";
@@ -2650,6 +3338,7 @@ async function pipeStreamingResponse(upstreamResponse, response, state) {
   consumeSseBuffer(`${buffer}\n\n`, streamState);
   rememberStreamingState(streamState, state);
   response.end();
+  return streamState;
 }
 
 function consumeSseBuffer(buffer, streamState) {
@@ -2691,8 +3380,9 @@ function rememberStreamingChunk(chunk, streamState) {
 function rememberStreamingState(streamState, state) {
   for (const current of streamState.values()) {
     if (!current.reasoning) continue;
+    const sourceTurnId = nextProxySourceTurnId(state);
     for (const id of current.toolCallIds.values()) {
-      rememberReasoning(id, current.reasoning, state);
+      rememberReasoning(id, current.reasoning, state, sourceTurnId);
     }
   }
 }
@@ -2708,15 +3398,23 @@ function rememberNonStreamingResponse(text, state) {
   for (const choice of payload?.choices || []) {
     const message = choice.message;
     if (!message?.reasoning_content || !Array.isArray(message.tool_calls)) continue;
+    const sourceTurnId = nextProxySourceTurnId(state);
     for (const call of message.tool_calls) {
-      if (call?.id) rememberReasoning(call.id, message.reasoning_content, state);
+      if (call?.id) rememberReasoning(call.id, message.reasoning_content, state, sourceTurnId);
     }
   }
 }
 
-function rememberReasoning(toolCallId, reasoningContent, state) {
+function nextProxySourceTurnId(state) {
+  state.nextSourceTurnId += 1;
+  return `turn_${state.nextSourceTurnId}`;
+}
+
+function rememberReasoning(toolCallId, reasoningContent, state, sourceTurnId) {
+  pruneProxyState(state);
   state.reasoningByToolCallId.set(toolCallId, {
     reasoningContent,
+    sourceTurnId,
     seenAt: Date.now(),
   });
 
@@ -2724,6 +3422,135 @@ function rememberReasoning(toolCallId, reasoningContent, state) {
     const oldest = state.reasoningByToolCallId.keys().next().value;
     state.reasoningByToolCallId.delete(oldest);
   }
+}
+
+function pruneProxyState(state) {
+  const cutoff = Date.now() - state.stateTtlMs;
+  for (const [toolCallId, entry] of state.reasoningByToolCallId.entries()) {
+    if (entry.seenAt < cutoff) state.reasoningByToolCallId.delete(toolCallId);
+  }
+}
+
+function appendProxyDiagnostics(filePath, ...events) {
+  if (!filePath || events.length === 0) return;
+  const lines = events
+    .filter(Boolean)
+    .map((event) => JSON.stringify(event));
+  if (lines.length === 0) return;
+  fs.appendFileSync(path.resolve(filePath), `${lines.join("\n")}\n`);
+}
+
+function summarizeProxyRequestEvent({ body, pathname, repair, schemaFindings }) {
+  return {
+    type: "request",
+    timestamp: new Date().toISOString(),
+    source: "proxy",
+    path: pathname,
+    model: sanitizeScalar(body?.model || ""),
+    stream: Boolean(body?.stream),
+    messages: summarizeDiagnosticMessages(body?.messages),
+    tools_count: Array.isArray(body?.tools) ? body.tools.length : 0,
+    repair: {
+      reasoning_restored: repair.injected,
+      findings: repair.findings.map(summarizeFinding),
+    },
+    schema_findings: schemaFindings.map(summarizeFinding),
+  };
+}
+
+function summarizeNonStreamingResponseEvents({ status, contentType, text, state }) {
+  const base = {
+    timestamp: new Date().toISOString(),
+    source: "proxy",
+    status,
+    content_type: contentType,
+    reasoning_state: {
+      cache_entries: state.reasoningByToolCallId.size,
+      ttl_ms: state.stateTtlMs,
+    },
+  };
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return [{ type: "response", ...base, parse_status: "non_json" }];
+  }
+
+  const events = [];
+  for (const choice of payload?.choices || []) {
+    const message = summarizeDiagnosticMessage(payloadChoiceMessage(choice));
+    if (!message) continue;
+    events.push({ type: "response", ...base, message });
+  }
+  return events.length > 0 ? events : [{ type: "response", ...base, parse_status: "no_message" }];
+}
+
+function summarizeStreamingResponseEvents({ status, contentType, streamState, state }) {
+  const events = [];
+  for (const current of streamState.values()) {
+    if (current.toolCallIds.size === 0 && !current.reasoning) continue;
+    events.push({
+      type: "response",
+      timestamp: new Date().toISOString(),
+      source: "proxy",
+      status,
+      content_type: contentType,
+      stream: true,
+      message: {
+        role: "assistant",
+        reasoning_content: current.reasoning ? redactedSummary("reasoning_content", current.reasoning) : undefined,
+        tool_calls: [...current.toolCallIds.values()].map((id) => ({ id, type: "function" })),
+      },
+      reasoning_state: {
+        cache_entries: state.reasoningByToolCallId.size,
+        ttl_ms: state.stateTtlMs,
+      },
+    });
+  }
+  return events;
+}
+
+function payloadChoiceMessage(choice) {
+  return choice?.message || choice?.delta;
+}
+
+function summarizeDiagnosticMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages.map(summarizeDiagnosticMessage).filter(Boolean);
+}
+
+function summarizeDiagnosticMessage(message) {
+  if (!message || typeof message !== "object") return undefined;
+  const output = { role: message.role || "unknown" };
+  if (message.reasoning_content) {
+    output.reasoning_content = redactedSummary("reasoning_content", message.reasoning_content);
+  }
+  if (Array.isArray(message.tool_calls)) {
+    output.tool_calls = message.tool_calls.map(summarizeDiagnosticToolCall).filter(Boolean);
+  }
+  if (message.role === "tool") {
+    output.tool_call_id = message.tool_call_id;
+    if (message.content) output.content = redactedSummary("tool_result", message.content);
+  }
+  return output;
+}
+
+function summarizeDiagnosticToolCall(call) {
+  if (!call || typeof call !== "object") return undefined;
+  return {
+    id: call.id,
+    type: call.type,
+    function: call.function?.name ? { name: sanitizeScalar(call.function.name) } : undefined,
+  };
+}
+
+function summarizeFinding(finding) {
+  return {
+    level: finding.level,
+    code: finding.code,
+    path: finding.path,
+    message: sanitizeScalar(finding.message),
+  };
 }
 
 function normalizeBaseUrl(value) {

@@ -22,7 +22,7 @@ const proxy = spawn(process.execPath, [path.join(root, "bin/deepseek-compat-kit.
 try {
   await Promise.all([
     waitForOutput(mock.stdout, /mock-upstream.*listening/),
-    waitForOutput(proxy.stderr, /proxy alpha listening/),
+    waitForOutput(proxy.stderr, /proxy listening/),
   ]);
 
   const client = new OpenAI({

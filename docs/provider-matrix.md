@@ -1,24 +1,27 @@
 # Provider Matrix
 
-Early status for DeepSeek CompatKit.
+Current compatibility status for DeepSeek CompatKit.
 
-Live DeepSeek regression tests are pending. Current proxy and probe behavior are validated against the repository mock upstream and local unit tests.
+Core behavior is validated against repository mock upstreams and local unit tests. Live endpoint validation should be tracked with real `probe` reports and generated matrices.
+
+For a repeatable real-endpoint workflow, see [Real Endpoint Validation](real-endpoint-validation.md). For a non-live example of the generated Markdown shape, see [Example Provider Matrix](examples/provider-matrix.example.md).
 
 Use `matrix` to turn real `probe` JSON reports into a shareable provider matrix:
 
 ```bash
 npx deepseek-compat-kit matrix ./reports/*.json --out ./provider-matrix.json --markdown ./Provider_Matrix.md
+npx deepseek-compat-kit matrix ./reports --out ./provider-matrix.json --markdown ./Provider_Matrix.md
 npx deepseek-compat-kit matrix ./reports/*.json --require agent
 npx deepseek-compat-kit matrix ./reports/*.json --fail-on-warn --fail-on-regression
 ```
 
-The generated matrix is only as strong as the probe reports supplied to it. Keep the original JSON reports as the source of truth for issue triage and regression review. Use `--require agent`, `--require basic`, or a comma-separated capability list when specific capabilities must pass on every supplied report. Use `--fail-on-fail`, `--fail-on-warn`, or `--fail-on-regression` when the matrix should act as a CI gate.
+The generated matrix is only as strong as the probe reports supplied to it. Keep the original JSON reports as the source of truth for issue triage and regression review. Directory inputs are expanded to sorted `*.json` files, excluding the current `--out` file when it lives in the same directory. Use `--require agent`, `--require basic`, or a comma-separated capability list when specific capabilities must pass on every supplied report. Use `--fail-on-fail`, `--fail-on-warn`, or `--fail-on-regression` when the matrix should act as a CI gate.
 
 | Target | Mode | Status | Notes |
 | --- | --- | --- | --- |
 | Official DeepSeek API | OpenAI-compatible `/chat/completions` | ALPHA | non-streaming tested through local mock upstream |
 | Official DeepSeek API | capability probe | ALPHA | functional report shape implemented; live DeepSeek run pending |
-| Official DeepSeek API | local proxy | ALPHA | single-process memory, stateful best-effort |
+| Official DeepSeek API | local proxy | ALPHA | single-process memory, conservative same-turn reasoning restoration |
 | Cline | OpenAI-compatible provider recipe | DOCS_ONLY | print-only recipe added; live e2e pending |
 | Roo Code | legacy OpenAI-compatible provider recipe | DOCS_ONLY | official docs show sunset notice; installed-copy recipe only |
 | OpenAI JS SDK | baseURL proxy recipe | DOCS_ONLY | example and print-only recipe added; live e2e pending |
@@ -30,11 +33,12 @@ The generated matrix is only as strong as the probe reports supplied to it. Keep
 | Claude Code | Anthropic-compatible config | NOT_SUPPORTED | direct support needs Anthropic Messages adapter or validated gateway recipe |
 | OpenCode | OpenAI-compatible provider recipe | DOCS_ONLY | print-only recipe added; live e2e pending |
 | vLLM | OpenAI-compatible runtime | UNKNOWN | v0.2+ |
-| OpenRouter | provider runtime | UNKNOWN | v0.2+ |
+| OpenRouter | relay provider recipe | DOCS_ONLY | print-only recipe added; live e2e pending |
 
-## Known Alpha Risks
+## Known Risks
 
-- Proxy state is single-process memory and currently keyed by `tool_call_id`.
-- Long-running multi-client proxy usage needs explicit conversation/session isolation before it should be treated as production infrastructure.
+- Proxy state is single-process memory and currently keyed by `tool_call_id`, with same-assistant-turn checks and a configurable TTL before restoration.
+- Long-running multi-client proxy usage still needs explicit conversation/session isolation before it should be treated as production infrastructure.
+- Use `proxy --diagnostics-log ./logs/proxy.jsonl` when you need a portable, sanitized local trace for `diagnose` or issue triage.
 - Probe is a functional compatibility check, not a throughput benchmark, latency benchmark, or model quality evaluation.
-- Live DeepSeek API compatibility tests should be added before marking provider support as PASS.
+- Live endpoint probe reports should be attached before marking provider support as PASS.

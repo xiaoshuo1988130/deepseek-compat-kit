@@ -50,6 +50,44 @@ For local tests or self-hosted gateways:
 npx deepseek-compat-kit proxy --port 8787 --upstream http://127.0.0.1:9000
 ```
 
+For relays or private gateways that require extra upstream headers:
+
+```bash
+npx deepseek-compat-kit proxy \
+  --port 8787 \
+  --upstream https://relay.example.com/v1 \
+  --upstream-timeout-ms 30000 \
+  --diagnostics-log ./logs/proxy.jsonl \
+  --upstream-header "HTTP-Referer: https://example.com" \
+  --upstream-header-env "X-Relay-Token=RELAY_TOKEN"
+```
+
+Use `--upstream-header` only for non-secret values. Put sensitive custom header values in environment variables and pass them with `--upstream-header-env`.
+
+Use `--upstream-timeout-ms` to cap how long the proxy waits for upstream response headers. After response headers arrive, streaming bodies are allowed to continue.
+
+Use `--state-ttl-ms` to limit how long cached `reasoning_content` can be used for conservative restoration. The default is one hour.
+
+Check runtime state without exposing secrets:
+
+```bash
+curl http://127.0.0.1:8787/health
+```
+
+The health response includes upstream URL, configured timeout, configured reasoning state TTL, cache entry count, extra upstream header names, and whether the selected API key environment variable is present. It does not include API key or header values.
+
+If you need a portable local trace for debugging, add:
+
+```bash
+--diagnostics-log ./logs/proxy.jsonl
+```
+
+The diagnostics log records structural request/response events that `diagnose` can read later. It omits prompt text, tool result bodies, API keys, custom header values, and full `reasoning_content`.
+
+`diagnose` combines findings inferred from message history with findings the proxy already recorded during the request, so the report can explain both what broke and why the proxy refused to restore state.
+
+Use `--fail-on-warn` when warning-level proxy or schema findings should fail a local script or CI gate.
+
 ## 2. Change only baseURL
 
 Point your OpenAI-compatible client to the local proxy:
@@ -68,7 +106,7 @@ Keep your model, messages, tools, and agent framework unchanged at first.
 When the proxy can help, it logs copyable diagnostics such as:
 
 ```text
-WARN DSK_REASONING_003 messages[4]: injected cached reasoning_content for 1 tool call(s).
+WARN DSK_REASONING_003 messages[4]: restored cached reasoning_content for 1 tool call(s).
 ```
 
 If the proxy never saw the original response that contained `reasoning_content`, it cannot reconstruct it. In that case it can diagnose the missing state, but the framework needs to preserve the field earlier in the conversation.
@@ -78,6 +116,7 @@ If the proxy never saw the original response that contained `reasoning_content`,
 If you need to file an issue, sanitize your run first:
 
 ```bash
+npx deepseek-compat-kit diagnose ./logs/proxy.jsonl --out ./diagnose-report.json --markdown ./Diagnose_Report.md
 npx deepseek-compat-kit sanitize ./logs/deepseek-run.jsonl --out ./safe-replay.jsonl
 ```
 
